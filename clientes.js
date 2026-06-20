@@ -223,7 +223,6 @@ function addContato(){
 
 function toggleCatForm(id, el){ el.classList.toggle('selected'); }
 
-// Cache temporário dos dados do CNPJ para preencher outras abas
 let _cnpjCache = {};
 
 async function cfBuscaCNPJ(){
@@ -233,12 +232,10 @@ async function cfBuscaCNPJ(){
   const d = await buscarCNPJ(cnpj);
   if(!d){ toast('❌ CNPJ não encontrado na Receita Federal'); return; }
 
-  // Preencher campos da aba Fiscal (visíveis agora)
   if($('cf_razao'))    $('cf_razao').value    = d.razao_social||'';
   if($('cf_fantasia')) $('cf_fantasia').value  = d.nome_fantasia||'';
   if($('cf_situacao')) $('cf_situacao').value  = d.descricao_situacao_cadastral||'Ativa';
 
-  // Guardar no cache para preencher aba Básico quando abrir
   const end = [d.logradouro,d.numero,d.complemento,d.bairro].filter(Boolean).join(', ');
   _cnpjCache = {
     loja:     d.nome_fantasia || d.razao_social || '',
@@ -248,14 +245,12 @@ async function cfBuscaCNPJ(){
     estado:   d.uf||'',
   };
 
-  // Preencher campos da aba Básico SE estiverem visíveis
   if($('cf_loja')&&!$('cf_loja').value)    $('cf_loja').value    = _cnpjCache.loja;
   if($('cf_cep'))     $('cf_cep').value     = _cnpjCache.cep;
   if($('cf_endereco')) $('cf_endereco').value = _cnpjCache.endereco;
   if($('cf_cidade'))  $('cf_cidade').value  = _cnpjCache.cidade;
   if($('cf_estado'))  $('cf_estado').value  = _cnpjCache.estado;
 
-  // Mostrar resumo na aba fiscal
   const preview = document.getElementById('cnpj_preview');
   if(preview) preview.innerHTML = `
     <div style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);border-radius:14px;padding:12px;margin-top:12px;font-size:13px">
@@ -289,10 +284,7 @@ async function saveClient(id){
   const nome=$('cf_nome')?.value?.trim();
   if(!loja&&!nome){ toast('⚠️ Preencha o nome da loja'); return; }
 
-  // Coletar categorias selecionadas
   const cats=[...document.querySelectorAll('.cat-item.selected')].map(el=>el.dataset.cat);
-
-  // Coletar contatos
   const ctNomes=[...document.querySelectorAll('.ct_nome')].map(el=>el.value);
   const ctCargos=[...document.querySelectorAll('.ct_cargo')].map(el=>el.value);
   const ctWpps=[...document.querySelectorAll('.ct_wpp')].map(el=>el.value);
@@ -300,40 +292,53 @@ async function saveClient(id){
 
   const now = new Date().toISOString();
   const existing = id ? state.clientes.find(x=>x.id===id) : null;
-  const cats_anterior = existing?.categorias||[];
 
   const c = {
     id: id||uuid(),
-    loja: $('cf_loja')?.value||'', nome: $('cf_nome')?.value||'',
-    whatsapp:$('cf_whatsapp')?.value||'', email:$('cf_email')?.value||'', instagram:$('cf_instagram')?.value||'',
-    cep:$('cf_cep')?.value||'', endereco:$('cf_endereco')?.value||'',
-    cidade:$('cf_cidade')?.value||'', estado:$('cf_estado')?.value||'',
-    tipo_cliente:$('cf_tipo')?.value||'novo', temperatura:$('cf_temp')?.value||'Morno',
-    status:$('cf_status')?.value||state.pipeline[0],
-    tags:($('cf_tags')?.value||'').split(',').map(t=>t.trim()).filter(Boolean),
-    obs:$('cf_obs')?.value||'', proxacao:$('cf_proxacao')?.value||'',
-    proxdata:$('cf_proxdata')?.value||'', aniversario:$('cf_aniversario')?.value||'',
-    // Fiscal
-    cnpj:$('cf_cnpj')?.value||'', razao_social:$('cf_razao')?.value||'',
-    nome_fantasia:$('cf_fantasia')?.value||'', inscricao_estadual:$('cf_ie')?.value||'',
-    situacao_cadastral:$('cf_situacao')?.value||'', site:$('cf_site')?.value||'',
-    // Comercial
-    qtd_lojas:$('cf_lojas')?.value||'1', vendedores:$('cf_vendedores')?.value||'',
-    aparelhos_mes:$('cf_aparelhos')?.value||'', potencial:$('cf_potencial')?.value||'',
-    marcas:$('cf_marcas')?.value||'', cat_mais_vendida:$('cf_catmais')?.value||'',
-    categorias: cats, cats_anterior,
-    // Relacionamento
-    perfil:$('cf_perfil')?.value||'', hobby:$('cf_hobby')?.value||'',
-    esposa:$('cf_esposa')?.value||'', filhos:$('cf_filhos')?.value||'',
-    info_pessoal:$('cf_pessoal')?.value||'', contatos,
-    created_at: existing?.created_at||now, updated_at: now,
+    loja: $('cf_loja')?.value||'',
+    nome: $('cf_nome')?.value||'',
+    whatsapp: $('cf_whatsapp')?.value||'',
+    email: $('cf_email')?.value||'',
+    instagram: $('cf_instagram')?.value||'',
+    cep: $('cf_cep')?.value||'',
+    endereco: $('cf_endereco')?.value||'',
+    cidade: $('cf_cidade')?.value||'',
+    estado: $('cf_estado')?.value||'',
+    tipo_cliente: $('cf_tipo')?.value||'novo',
+    temperatura: $('cf_temp')?.value||'Morno',
+    status: $('cf_status')?.value||state.pipeline[0],
+    tags: ($('cf_tags')?.value||'').split(',').map(t=>t.trim()).filter(Boolean),
+    obs: $('cf_obs')?.value||'',
+    proxacao: $('cf_proxacao')?.value||'',
+    proxdata: $('cf_proxdata')?.value||'',
+    aniversario: $('cf_aniversario')?.value||'',
+    cnpj: $('cf_cnpj')?.value||'',
+    razao_social: $('cf_razao')?.value||'',
+    nome_fantasia: $('cf_fantasia')?.value||'',
+    inscricao_estadual: $('cf_ie')?.value||'',
+    situacao_cadastral: $('cf_situacao')?.value||'',
+    qtd_lojas: $('cf_lojas')?.value||'1',
+    vendedores: $('cf_vendedores')?.value||'',
+    aparelhos_mes: $('cf_aparelhos')?.value||'',
+    potencial: $('cf_potencial')?.value||'',
+    marcas: $('cf_marcas')?.value||'',
+    cat_mais_vendida: $('cf_catmais')?.value||'',
+    categorias: cats,
+    perfil: $('cf_perfil')?.value||'',
+    hobby: $('cf_hobby')?.value||'',
+    esposa: $('cf_esposa')?.value||'',
+    filhos: $('cf_filhos')?.value||'',
+    info_pessoal: $('cf_pessoal')?.value||'',
+    contatos,
+    created_at: existing?.created_at||now,
+    updated_at: now,
     origem: existing?.origem||'Manual',
   };
 
   if(id){ const i=state.clientes.findIndex(x=>x.id===id); state.clientes[i]=c; }
   else state.clientes.unshift(c);
 
-  await upsertRow('clientes',c);
+  await upsertRow('clientes', c);
   toast('✅ Cliente salvo!');
   closeModal();
   clientes();
@@ -342,9 +347,7 @@ async function saveClient(id){
 async function deleteClient(id){
   const c = state.clientes.find(x=>x.id===id);
   const nome = c?.loja || c?.nome || 'este cliente';
-  if(!confirm(`Excluir ${nome}?
-
-Também serão removidos pedidos, lembretes, histórico e RMA vinculados a ele.`)) return;
+  if(!confirm(`Excluir ${nome}?\n\nTambém serão removidos pedidos, lembretes, histórico e RMA vinculados a ele.`)) return;
 
   const pedidos = state.pedidos.filter(x=>x.cliente_id===id).map(x=>x.id);
   const lembretes = state.lembretes.filter(x=>x.cliente_id===id || x.cliente===nome).map(x=>x.id);
