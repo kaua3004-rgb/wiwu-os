@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="WIWU OS">
+<title>WIWU OS V5</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<div class="app">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo">W</div>
+      <div><h1>WIWU OS</h1><p>CRM Comercial v5</p></div>
+    </div>
+    <nav class="nav" id="nav"></nav>
+  </aside>
+
+  <!-- CONTENT -->
+  <main class="content">
+    <div class="page active" id="dashboard"></div>
+    <div class="page" id="clientes"></div>
+    <div class="page" id="pipeline"></div>
+    <div class="page" id="feira"></div>
+    <div class="page" id="lembretes"></div>
+    <div class="page" id="faturamento"></div>
+    <div class="page" id="ranking"></div>
+    <div class="page" id="scripts"></div>
+    <div class="page" id="concorrentes"></div>
+  </main>
+
+</div>
+
+<!-- BOTTOM NAV (mobile) -->
+<nav class="bottom" id="bottom"></nav>
+
+<!-- MODAL CLIENTE -->
+<div class="modal" id="clientModal"></div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script src="config.js"></script>
+<script src="clientes.js"></script>
+<script src="ficha.js"></script>
+<script src="pages.js"></script>
+<script>
+
+// ── NAVEGAÇÃO ─────────────────────────────────────────────────────
+const PAGES = [
+  ['dashboard',   '🏠', 'Home',        'principal'],
+  ['clientes',    '👥', 'Clientes',    'principal'],
+  ['pipeline',    '📊', 'Pipeline',    'principal'],
+  ['feira',       '🎪', 'Modo Feira',  'principal'],
+  ['lembretes',   '⏰', 'Lembretes',   'principal'],
+  ['faturamento', '💰', 'Faturamento', 'financeiro'],
+  ['ranking',     '🏆', 'Ranking',     'financeiro'],
+  ['scripts',     '📝', 'Scripts',     'ferramentas'],
+  ['concorrentes','⚔️', 'Concorrentes','ferramentas'],
+];
+
+const SECTIONS = {
+  principal:   '— Principal',
+  financeiro:  '— Financeiro',
+  ferramentas: '— Ferramentas',
+};
+
+function initNav(){
+  let lastSec = '';
+  let navHtml = '';
+  PAGES.forEach(([id, icon, label, sec]) => {
+    if(sec !== lastSec){
+      navHtml += `<div class="nav-section">${SECTIONS[sec]||sec}</div>`;
+      lastSec = sec;
+    }
+    navHtml += `<button onclick="showPage('${id}')" data-page="${id}">${icon} ${label}</button>`;
+  });
+  $('nav').innerHTML = navHtml;
+
+  // Bottom nav (mobile) — primeiros 5
+  $('bottom').innerHTML = PAGES.slice(0,5).map(([id,icon,label])=>
+    `<button onclick="showPage('${id}')" data-page="${id}"><span style="font-size:20px">${icon}</span><span>${label}</span></button>`
+  ).join('');
+}
+
+function showPage(id){
+  document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id===id));
+  document.querySelectorAll('[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===id));
+  const renders={dashboard,clientes,pipeline,feira,lembretes,faturamento,ranking,scripts,concorrentes};
+  if(renders[id]) renders[id]();
+}
+
+// ── INIT ──────────────────────────────────────────────────────────
+async function start(){
+  localLoad();
+  initNav();
+  dashboard();
+  // Sidebar ativo
+  document.querySelector('[data-page="dashboard"]')?.classList.add('active');
+  // Conectar nuvem
+  try {
+    sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    cloud = true;
+    await cloudLoad();
+    dashboard(); // Rerender com dados da nuvem
+    toast('☁️ Sincronizado com a nuvem');
+  } catch(e){
+    toast('📱 Modo offline — dados locais');
+  }
+}
+
+start();
+
+</script>
+</body>
+</html>
