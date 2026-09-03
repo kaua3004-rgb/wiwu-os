@@ -53,6 +53,7 @@ select option{background:#1a1a2e}
 .cards{grid-template-columns:repeat(4,minmax(150px,1fr))}
 .cards-3{grid-template-columns:repeat(3,minmax(150px,1fr))}
 .card{background:linear-gradient(180deg,rgba(255,255,255,.085),rgba(255,255,255,.045));border:1px solid var(--line);border-radius:28px;padding:20px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+.metric-button{color:var(--text);text-align:left;width:100%;transition:.2s transform,.2s border-color}.metric-button:hover{transform:translateY(-2px);border-color:rgba(168,85,247,.55)}.metric-hint{display:block;margin-top:7px;color:var(--muted);font-size:12px;font-weight:500}
 .card:before{content:"";position:absolute;inset:-1px;background:radial-gradient(circle at top right,rgba(124,58,237,.17),transparent 44%);pointer-events:none}
 .metric small{color:var(--muted);font-size:12px}
 .metric strong{display:block;font-size:32px;margin-top:8px;line-height:1}
