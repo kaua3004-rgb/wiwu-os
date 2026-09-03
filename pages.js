@@ -677,7 +677,7 @@ function faturamento(){
       <div class="card metric"><small>🆕 Novos</small><strong>${fmtMoney(fatNovo)}</strong></div>
       <div class="card metric"><small>👥 Carteira</small><strong>${fmtMoney(fatCart)}</strong></div>
       <div class="card metric"><small>💸 Comissão</small><strong style="color:#a78bfa">${fmtMoney(comTotal)}</strong></div>
-      <div class="card metric"><small>📦 Pedidos</small><strong>${pedMes.length}</strong></div>
+      <button class="card metric metric-button" onclick="abrirPedidosMes('${mes}')"><small>📦 Pedidos</small><strong>${pedMes.length}</strong><span class="metric-hint">Clique para visualizar</span></button>
     </div>
     <div class="card" style="margin-bottom:20px">
       <div class="section-heading">
@@ -710,6 +710,12 @@ function faturamento(){
           </div>
         </div>`;}).join('')||'<div class="empty">Nenhum pedido neste mês.</div>'}
     </div>`;
+}
+
+function abrirPedidosMes(mes){
+  const pedidos=pedidosDoMes(mes).sort((a,b)=>(b.data||'').localeCompare(a.data||''));
+  const total=pedidos.reduce((s,p)=>s+parseFloat(p.valor||0),0);
+  document.body.insertAdjacentHTML('beforeend',`<div id="pedidosMesOverlay" class="quick-overlay" onclick="if(event.target===this)this.remove()"><div class="quick-dialog wide"><div class="modal-head"><div><h3 style="margin:0">📦 Pedidos do mês</h3><p class="section-note">${new Date(mes+'-02T12:00:00').toLocaleDateString('pt-BR',{month:'long',year:'numeric'})} • ${pedidos.length} pedido${pedidos.length!==1?'s':''} • ${fmtMoney(total)}</p></div><button class="x" onclick="$('pedidosMesOverlay').remove()">✕</button></div><div class="quick-list">${pedidos.map(p=>{const c=state.clientes.find(x=>x.id===p.cliente_id);return `<button onclick="$('pedidosMesOverlay')?.remove();openClient('${p.cliente_id}','pedidos')"><span><b>${esc(c?.loja||c?.nome||'Cliente')}</b><small>${fmt(p.data)} • ${p.tipo_cliente==='carteira'?'Carteira':'Novo'} • ${(p.categorias||[]).length} categorias</small></span><strong>${fmtMoney(p.valor)}</strong></button>`}).join('')||'<div class="empty">Nenhum pedido registrado neste mês.</div>'}</div><div class="actions"><button class="btn" onclick="$('pedidosMesOverlay').remove();selecionarClientePedido()">+ Adicionar venda</button><button class="btn ghost" onclick="$('pedidosMesOverlay').remove()">Fechar</button></div></div></div>`);
 }
 
 // ── CONCORRENTES ──────────────────────────────────────────────────
