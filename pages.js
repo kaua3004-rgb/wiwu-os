@@ -34,7 +34,7 @@ function dashboard(){
   const fatTotal=pedidosMes.reduce((s,p)=>s+parseFloat(p.valor||0),0);
   const fatNovo=pedidosMes.filter(p=>p.tipo_cliente==='novo').reduce((s,p)=>s+parseFloat(p.valor||0),0);
   const fatCart=pedidosMes.filter(p=>p.tipo_cliente==='carteira').reduce((s,p)=>s+parseFloat(p.valor||0),0);
-  const comissaoMes=pedidosMes.reduce((s,p)=>s+parseFloat(p.comissao||0),0);
+  const comissaoMes=pedidosMes.reduce((s,p)=>s+calcComissao(p).total,0);
   const emProposta=state.clientes.filter(c=>c.status==='📄 Proposta').length;
   const emNeg=state.clientes.filter(c=>c.status==='💰 Negociação').length;
   const pctFat=Math.min(100,Math.round(fatTotal/(m.faturamentoMes||50000)*100));
@@ -567,7 +567,7 @@ function ranking(){
     if(!pedidosPorCliente[p.cliente_id]) pedidosPorCliente[p.cliente_id]={fat:0,pedidos:0,comissao:0};
     pedidosPorCliente[p.cliente_id].fat+=parseFloat(p.valor||0);
     pedidosPorCliente[p.cliente_id].pedidos++;
-    pedidosPorCliente[p.cliente_id].comissao+=parseFloat(p.comissao||0);
+    pedidosPorCliente[p.cliente_id].comissao+=calcComissao(p).total;
   });
   const ranked=state.clientes
     .map(c=>({...c,_fat:pedidosPorCliente[c.id]?.fat||0,_pedidos:pedidosPorCliente[c.id]?.pedidos||0,_cats:(c.categorias||[]).length}))
@@ -640,7 +640,8 @@ function faturamento(){
   const fatTotal=pedMes.reduce((s,p)=>s+parseFloat(p.valor||0),0);
   const fatNovo=pedMes.filter(p=>p.tipo_cliente==='novo').reduce((s,p)=>s+parseFloat(p.valor||0),0);
   const fatCart=pedMes.filter(p=>p.tipo_cliente==='carteira').reduce((s,p)=>s+parseFloat(p.valor||0),0);
-  const comTotal=pedMes.reduce((s,p)=>s+parseFloat(p.comissao||0),0);
+  const comTotal=pedMes.reduce((s,p)=>s+calcComissao(p).total,0);
+  const metaComissaoAtiva=!!state.comissao?.metaMeses?.[mes];
   const meta=state.metas?.faturamentoMes||50000;
   const pct=Math.min(100,Math.round(fatTotal/meta*100));
   const clientesMes=analiseClientesFaturamento(mes);
@@ -661,6 +662,7 @@ function faturamento(){
         <button class="btn" onclick="selecionarClientePedido()">+ Adicionar venda</button>
         <button class="btn ghost" onclick="editMeta('faturamentoMes')">✏️ Editar meta</button>
         <button class="btn ghost" onclick="editarComissao()">💸 Editar comissão</button>
+        <button class="btn ${metaComissaoAtiva?'green':'ghost'}" onclick="alternarMetaComissao('${mes}')">${metaComissaoAtiva?'✅ Meta batida: 5%':'🏆 Bati a meta — aplicar 5%'}</button>
         <button class="btn ghost" onclick="limparPedidosOrfaos()">🧹 Corrigir</button>
       </div>
     </div>
@@ -731,8 +733,26 @@ function editarComissao(){
 
 async function salvarComissao(){
   const valor=id=>Math.max(0,Number($(id)?.value||0));
-  state.comissao={novo:[{min:0,max:4,pct:valor('com_novo_1')},{min:5,max:6,pct:valor('com_novo_2')},{min:7,max:99,pct:valor('com_novo_3')}],carteira:[{min:0,max:3,pct:valor('com_cart_1')},{min:4,max:5,pct:valor('com_cart_2')},{min:6,max:99,pct:valor('com_cart_3')}],bonusFonte:valor('com_bonus')};
+  const metaMeses={...(state.comissao?.metaMeses||{})};
+  state.comissao={novo:[{min:0,max:4,pct:valor('com_novo_1')},{min:5,max:6,pct:valor('com_novo_2')},{min:7,max:99,pct:valor('com_novo_3')}],carteira:[{min:0,max:3,pct:valor('com_cart_1')},{min:4,max:5,pct:valor('com_cart_2')},{min:6,max:99,pct:valor('com_cart_3')}],bonusFonte:valor('com_bonus'),pctMeta:5,metaMeses};
   await cloudSave();$('comissaoConfigOverlay')?.remove();toast('✅ Comissão atualizada');faturamento();
+}
+
+async function alternarMetaComissao(mes){
+  if(!state.comissao) state.comissao=JSON.parse(JSON.stringify(COMISSAO));
+  state.comissao.metaMeses={...(state.comissao.metaMeses||{})};
+  const ativa=!!state.comissao.metaMeses[mes];
+  if(ativa){
+    if(!confirm('Remover a comissão de 5% deste mês e voltar às porcentagens normais?')) return;
+    delete state.comissao.metaMeses[mes];
+    toast('Comissão de 5% removida deste mês');
+  }else{
+    if(!confirm('Confirmar meta batida? Todos os pedidos deste mês terão comissão de 5%.')) return;
+    state.comissao.metaMeses[mes]=true;
+    toast('🏆 Meta batida: comissão de 5% aplicada ao mês inteiro');
+  }
+  await cloudSave();
+  faturamento();
 }
 function itemSelecionarClientePedido(c){ return `<button data-search="${esc(((c.loja||'')+' '+(c.nome||'')).toLowerCase())}" onclick="$('selecionarPedidoOverlay').remove();novoPedido('${c.id}')"><b>${esc(c.loja||c.nome)}</b><small>${esc(c.nome||'')} ${c.cidade?'• '+esc(c.cidade):''}</small></button>`; }
 function filtrarClientesPedido(q){ document.querySelectorAll('#listaClientesPedido>button').forEach(b=>b.style.display=b.dataset.search.includes(q.toLowerCase())?'':'none'); }
