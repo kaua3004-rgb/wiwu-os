@@ -5,24 +5,22 @@ const STORE         = 'wiwu_os_v5';
 
 // Categorias WIWU oficiais
 const CATEGORIAS = [
-  {id:'iphone',    icon:'📱', label:'Linha iPhone'},
-  {id:'ipad',      icon:'📲', label:'Linha iPad'},
-  {id:'macbook',   icon:'💻', label:'Linha MacBook'},
-  {id:'fonte',     icon:'🔌', label:'Fontes / Energia'},
-  {id:'inducao',   icon:'⚡', label:'Carregador Indução'},
-  {id:'powerbank', icon:'🔋', label:'Power Bank'},
-  {id:'cabos',     icon:'🔗', label:'Cabos'},
-  {id:'pelicula',  icon:'🛡️', label:'Películas'},
-  {id:'capas',     icon:'📦', label:'Cases / Capas'},
-  {id:'mochila',   icon:'🎒', label:'Mochilas'},
-  {id:'pasta',     icon:'💼', label:'Pastas MacBook'},
-  {id:'bolsa',     icon:'👜', label:'Bolsas'},
-  {id:'necessaire',icon:'🧳', label:'Nécessaire'},
-  {id:'fone',      icon:'🎧', label:'Fones de Ouvido'},
-  {id:'smartwatch',icon:'⌚', label:'Smart Watch'},
-  {id:'foto',      icon:'📷', label:'Foto e Vídeo (Gimbal/Tripé)'},
-  {id:'carro',     icon:'🚗', label:'Acessórios para Carro'},
+  {id:'iphone',icon:'📱',label:'iPhone',minimo:10,itens:'Película frontal, película de câmera e capa'},
+  {id:'energia_basica',icon:'🔌',label:'Energia básica',minimo:10,itens:'Fontes, kits e cabos'},
+  {id:'energia_avancada',icon:'⚡',label:'Energia avançada',minimo:6,itens:'Power bank e base 3 em 1'},
+  {id:'ipad',icon:'📲',label:'iPad',minimo:15,itens:'Capas, Pencil, películas, suportes, hubs e teclado'},
+  {id:'macbook',icon:'💻',label:'MacBook',minimo:10,itens:'Cases, pastas, películas, mouse e hub'},
+  {id:'apple_watch',icon:'⌚',label:'Apple Watch',minimo:5,itens:'Pulseiras, carregador e película'},
+  {id:'mochilas',icon:'🎒',label:'Mochilas',minimo:3,itens:'Osun, Elite S, Minimalist e Warriors'},
+  {id:'necessaires',icon:'🧳',label:'Necessaires',minimo:3,itens:'Minimalist, digital e sem digital'},
+  {id:'fones',icon:'🎧',label:'Fones de ouvido',minimo:6,itens:'Headset, Airbuds, AirPods, com fio e OWS'},
+  {id:'conectividade',icon:'📡',label:'Conectividade',minimo:5,itens:'iTag, flash drive, carteira e suporte'},
+  {id:'fotografia',icon:'📷',label:'Fotografia',minimo:6,itens:'Tripés, gimbal, microfone e suporte de pescoço'},
+  {id:'veicular',icon:'🚗',label:'Veicular',minimo:4,itens:'Carregadores e suportes'},
 ];
+
+const CATEGORIAS_LEGADAS={fonte:'energia_basica',cabos:'energia_basica',inducao:'energia_avancada',powerbank:'energia_avancada',pelicula:'iphone',capas:'iphone',pasta:'macbook',bolsa:'mochilas',mochila:'mochilas',necessaire:'necessaires',fone:'fones',smartwatch:'apple_watch',foto:'fotografia',carro:'veicular'};
+function normalizarCategorias(lista=[]){ return [...new Set(lista.map(id=>CATEGORIAS_LEGADAS[id]||id).filter(id=>CATEGORIAS.some(c=>c.id===id)))]; }
 
 const PIPELINE_DEFAULT = [
   '🎪 Feira','📞 Primeiro Contato','💬 WhatsApp',
@@ -38,8 +36,8 @@ const COMISSAO = {
   novo:     [{min:0, max:4, pct:1.0},{min:5, max:6, pct:1.5},{min:7, max:99, pct:2.0}],
   carteira: [{min:0, max:3, pct:0},{min:4, max:5, pct:1.0},{min:6, max:99, pct:1.5}],
   bonusFonte: 20,
-  pctMeta: 5,
-  metaMeses: {}
+  pctGlobal: 1,
+  globalMeses: {}
 };
 
 let state = {
@@ -60,6 +58,7 @@ let state = {
   interesses: ['iPhone','iPad','MacBook','Energia','Áudio','Pencil','Apple Watch','Cases','Películas'],
   metas: { contatosDia:15, ligacoesDia:10, contatosMes:40, faturamentoMes:50000 },
   comissao: JSON.parse(JSON.stringify(COMISSAO)),
+  pedidoDetalhes: {},
   registros: {},
   tags: ['VIP','Indicação','Pagamento difícil','Feira SP 2026','Potencial alto','Inativo'],
 };
@@ -97,7 +96,7 @@ async function cloudLoad(){
     if(cfgError) ok=false;
     if(cfg && cfg.value){
       const parsed = JSON.parse(cfg.value||'{}');
-      ['pipeline','metas','comissao','registros','tags','interesses'].forEach(k=>{ if(parsed[k]) state[k]=parsed[k]; });
+      ['pipeline','metas','comissao','pedidoDetalhes','registros','tags','interesses'].forEach(k=>{ if(parsed[k]) state[k]=parsed[k]; });
     }
   } catch(e){ ok=false; console.warn('cloudLoad error',e); }
   localSave();
@@ -109,7 +108,7 @@ async function cloudSave(){
   localSave();
   if(!sb) return;
   try {
-    const cfg = {pipeline:state.pipeline,metas:state.metas,comissao:state.comissao,registros:state.registros,tags:state.tags,interesses:state.interesses};
+    const cfg = {pipeline:state.pipeline,metas:state.metas,comissao:state.comissao,pedidoDetalhes:state.pedidoDetalhes||{},registros:state.registros,tags:state.tags,interesses:state.interesses};
     const {error} = await sb.from('config').upsert({key:'state',value:JSON.stringify(cfg)},{onConflict:'key'});
     if(error) console.warn('cloudSave erro config:', error.message);
   } catch(e){ console.warn('cloudSave error',e); }
@@ -175,19 +174,21 @@ function toast(msg, dur=3000){
 
 function calcComissao(pedido){
   const tipo = pedido.tipo_cliente || 'novo';
-  const cats = (pedido.categorias||[]).length;
+  const cats = normalizarCategorias(pedido.categorias||[]).length;
   const valor = parseFloat(pedido.valor||0);
   const fontes = parseInt(pedido.caixas_fonte||0);
   const tabela = state.comissao || COMISSAO;
   const regras = tabela[tipo] || tabela.novo || COMISSAO.novo;
   const regra = regras.slice().reverse().find(r => cats >= r.min) || regras[0];
-  const mes = pedido.data?.slice(0,7);
-  const metaAtiva = !!(mes && tabela.metaMeses?.[mes]);
-  const percentual = metaAtiva ? Number(tabela.pctMeta ?? 5) : regra.pct;
+  const percentual = Number(regra.pct||0);
   const pct = percentual / 100;
   const bonusUnitario = Number(tabela.bonusFonte ?? COMISSAO.bonusFonte);
-  return { pct: percentual, metaAtiva, comissaoBase: valor*pct, bonusFonte: fontes*bonusUnitario, total: valor*pct + fontes*bonusUnitario };
+  return { pct: percentual, comissaoBase: valor*pct, bonusFonte: fontes*bonusUnitario, total: valor*pct + fontes*bonusUnitario };
 }
+
+function detalhesPedido(id){ return state.pedidoDetalhes?.[id]||{}; }
+function fretePedido(p){ return Math.max(0,Number(detalhesPedido(p.id).frete||0)); }
+function valorMetaPedido(p){ return Number(p.valor||0)+fretePedido(p); }
 
 async function buscarCNPJ(cnpj){
   const c = cnpj.replace(/\D/g,'');

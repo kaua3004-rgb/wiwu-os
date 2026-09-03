@@ -637,24 +637,28 @@ function analiseClientesFaturamento(mes){
 function faturamento(){
   const mes=_mesFaturamento||todayISO().slice(0,7);
   const pedMes=pedidosDoMes(mes);
-  const fatTotal=pedMes.reduce((s,p)=>s+parseFloat(p.valor||0),0);
+  const fatProdutos=pedMes.reduce((s,p)=>s+parseFloat(p.valor||0),0);
+  const freteTotal=pedMes.reduce((s,p)=>s+fretePedido(p),0);
+  const fatTotal=fatProdutos+freteTotal;
   const fatNovo=pedMes.filter(p=>p.tipo_cliente==='novo').reduce((s,p)=>s+parseFloat(p.valor||0),0);
   const fatCart=pedMes.filter(p=>p.tipo_cliente==='carteira').reduce((s,p)=>s+parseFloat(p.valor||0),0);
-  const comTotal=pedMes.reduce((s,p)=>s+calcComissao(p).total,0);
+  const comBase=pedMes.reduce((s,p)=>s+calcComissao(p).comissaoBase,0);
   const caixasVendidas=pedMes.reduce((s,p)=>s+parseInt(p.caixas_fonte||0,10),0);
   const bonusCaixas=pedMes.reduce((s,p)=>s+calcComissao(p).bonusFonte,0);
-  const metaComissaoAtiva=!!state.comissao?.metaMeses?.[mes];
+  const metaComissaoAtiva=!!state.comissao?.globalMeses?.[mes];
+  const bonusGlobal=metaComissaoAtiva?fatProdutos*Number(state.comissao?.pctGlobal??1)/100:0;
+  const comTotal=comBase+bonusCaixas+bonusGlobal;
   const meta=state.metas?.faturamentoMes||50000;
   const pct=Math.min(100,Math.round(fatTotal/meta*100));
   const clientesMes=analiseClientesFaturamento(mes);
   const clientesRecorrentes=clientesMes.filter(c=>c.mesesComCompra===6).length;
   const mesAnterior=mesesAte(mes,2)[0];
-  const fatAnterior=pedidosDoMes(mesAnterior).reduce((s,p)=>s+parseFloat(p.valor||0),0);
+  const fatAnterior=pedidosDoMes(mesAnterior).reduce((s,p)=>s+valorMetaPedido(p),0);
   const variacao=fatAnterior?((fatTotal-fatAnterior)/fatAnterior*100):null;
 
   // Por categoria
   const catFat={};
-  pedMes.forEach(p=>(p.categorias||[]).forEach(cat=>{catFat[cat]=(catFat[cat]||0)+parseFloat(p.valor||0)/Math.max(1,(p.categorias||[]).length);}));
+  pedMes.forEach(p=>{const cats=normalizarCategorias(p.categorias||[]);cats.forEach(cat=>{catFat[cat]=(catFat[cat]||0)+parseFloat(p.valor||0)/Math.max(1,cats.length);});});
 
   $('faturamento').innerHTML=`
     <div class="topbar">
@@ -662,15 +666,16 @@ function faturamento(){
       <div class="row">
         <input type="month" value="${mes}" onchange="_mesFaturamento=this.value;faturamento()" style="max-width:170px">
         <button class="btn" onclick="selecionarClientePedido()">+ Adicionar venda</button>
+        <button class="btn ghost" onclick="abrirImportadorPedido()">📄 Importar pedido</button>
         <button class="btn ghost" onclick="editMeta('faturamentoMes')">✏️ Editar meta</button>
         <button class="btn ghost" onclick="editarComissao()">💸 Editar comissão</button>
-        <button class="btn ${metaComissaoAtiva?'green':'ghost'}" onclick="alternarMetaComissao('${mes}')">${metaComissaoAtiva?'✅ Meta batida: 5%':'🏆 Bati a meta — aplicar 5%'}</button>
+        <button class="btn ${metaComissaoAtiva?'green':'ghost'}" onclick="alternarMetaComissao('${mes}')">${metaComissaoAtiva?'✅ Meta global: +1%':'🏆 Aplicar +1% da meta global'}</button>
         <button class="btn ghost" onclick="limparPedidosOrfaos()">🧹 Corrigir</button>
       </div>
     </div>
     <div class="commission-card" style="margin-bottom:20px">
       <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:12px">
-        <div><small style="color:var(--muted)">Total faturado</small><div style="font-size:32px;font-weight:800;margin-top:4px">${fmtMoney(fatTotal)}</div></div>
+        <div><small style="color:var(--muted)">Total para a meta (produtos + frete)</small><div style="font-size:32px;font-weight:800;margin-top:4px">${fmtMoney(fatTotal)}</div><small style="color:var(--muted)">Produtos ${fmtMoney(fatProdutos)} • Frete ${fmtMoney(freteTotal)}</small></div>
         <div style="text-align:right"><small style="color:var(--muted)">Meta</small><div style="font-size:20px;font-weight:700">${fmtMoney(meta)}</div></div>
       </div>
       <div class="progress" style="height:10px"><div class="progress-bar" style="width:${pct}%;background:linear-gradient(90deg,var(--purple),var(--purple2))"></div></div>
@@ -680,7 +685,7 @@ function faturamento(){
     <div class="grid cards" style="margin-bottom:20px">
       <div class="card metric"><small>🆕 Novos</small><strong>${fmtMoney(fatNovo)}</strong></div>
       <div class="card metric"><small>👥 Carteira</small><strong>${fmtMoney(fatCart)}</strong></div>
-      <div class="card metric"><small>💸 Comissão</small><strong style="color:#a78bfa">${fmtMoney(comTotal)}</strong></div>
+      <div class="card metric"><small>💸 Comissão total</small><strong style="color:#a78bfa">${fmtMoney(comTotal)}</strong><span class="metric-hint">Base ${fmtMoney(comBase)}${metaComissaoAtiva?` • Global ${fmtMoney(bonusGlobal)}`:''}</span></div>
       <button class="card metric metric-button" onclick="abrirPedidosMes('${mes}')"><small>📦 Pedidos</small><strong>${pedMes.length}</strong><span class="metric-hint">Clique para visualizar</span></button>
       <div class="card metric"><small>📦 Caixas fechadas</small><strong>${caixasVendidas}</strong><span class="metric-hint">Vendidas neste mês</span></div>
       <div class="card metric"><small>💵 Bônus das caixas</small><strong style="color:#86efac">${fmtMoney(bonusCaixas)}</strong><span class="metric-hint">Valor a receber</span></div>
@@ -720,8 +725,8 @@ function faturamento(){
 
 function abrirPedidosMes(mes){
   const pedidos=pedidosDoMes(mes).sort((a,b)=>(b.data||'').localeCompare(a.data||''));
-  const total=pedidos.reduce((s,p)=>s+parseFloat(p.valor||0),0);
-  document.body.insertAdjacentHTML('beforeend',`<div id="pedidosMesOverlay" class="quick-overlay" onclick="if(event.target===this)this.remove()"><div class="quick-dialog wide"><div class="modal-head"><div><h3 style="margin:0">📦 Pedidos do mês</h3><p class="section-note">${new Date(mes+'-02T12:00:00').toLocaleDateString('pt-BR',{month:'long',year:'numeric'})} • ${pedidos.length} pedido${pedidos.length!==1?'s':''} • ${fmtMoney(total)}</p></div><button class="x" onclick="$('pedidosMesOverlay').remove()">✕</button></div><div class="quick-list">${pedidos.map(p=>{const c=state.clientes.find(x=>x.id===p.cliente_id);return `<button onclick="$('pedidosMesOverlay')?.remove();openClient('${p.cliente_id}','pedidos')"><span><b>${esc(c?.loja||c?.nome||'Cliente')}</b><small>${fmt(p.data)} • ${p.tipo_cliente==='carteira'?'Carteira':'Novo'} • ${(p.categorias||[]).length} categorias</small></span><strong>${fmtMoney(p.valor)}</strong></button>`}).join('')||'<div class="empty">Nenhum pedido registrado neste mês.</div>'}</div><div class="actions"><button class="btn" onclick="$('pedidosMesOverlay').remove();selecionarClientePedido()">+ Adicionar venda</button><button class="btn ghost" onclick="$('pedidosMesOverlay').remove()">Fechar</button></div></div></div>`);
+  const total=pedidos.reduce((s,p)=>s+valorMetaPedido(p),0);
+  document.body.insertAdjacentHTML('beforeend',`<div id="pedidosMesOverlay" class="quick-overlay" onclick="if(event.target===this)this.remove()"><div class="quick-dialog wide"><div class="modal-head"><div><h3 style="margin:0">📦 Pedidos do mês</h3><p class="section-note">${new Date(mes+'-02T12:00:00').toLocaleDateString('pt-BR',{month:'long',year:'numeric'})} • ${pedidos.length} pedido${pedidos.length!==1?'s':''} • ${fmtMoney(total)} para a meta</p></div><button class="x" onclick="$('pedidosMesOverlay').remove()">✕</button></div><div class="quick-list">${pedidos.map(p=>{const c=state.clientes.find(x=>x.id===p.cliente_id);const frete=fretePedido(p);return `<button onclick="$('pedidosMesOverlay')?.remove();openClient('${p.cliente_id}','pedidos')"><span><b>${esc(c?.loja||c?.nome||'Cliente')}</b><small>${fmt(p.data)} • ${normalizarCategorias(p.categorias||[]).length} categorias • Produtos ${fmtMoney(p.valor)}${frete?` • Frete ${fmtMoney(frete)}`:''}</small></span><strong>${fmtMoney(valorMetaPedido(p))}</strong></button>`}).join('')||'<div class="empty">Nenhum pedido registrado neste mês.</div>'}</div><div class="actions"><button class="btn" onclick="$('pedidosMesOverlay').remove();selecionarClientePedido()">+ Adicionar venda</button><button class="btn ghost" onclick="$('pedidosMesOverlay').remove()">Fechar</button></div></div></div>`);
 }
 
 // ── CONCORRENTES ──────────────────────────────────────────────────
@@ -732,28 +737,28 @@ function selecionarClientePedido(){
 
 function editarComissao(){
   const c=state.comissao||JSON.parse(JSON.stringify(COMISSAO));
-  document.body.insertAdjacentHTML('beforeend',`<div id="comissaoConfigOverlay" class="quick-overlay" onclick="if(event.target===this)this.remove()"><div class="quick-dialog wide"><div class="modal-head"><div><h3 style="margin:0">Editar comissão</h3><p class="section-note">Altere as porcentagens aplicadas aos próximos cálculos.</p></div><button class="x" onclick="$('comissaoConfigOverlay').remove()">✕</button></div><h4>Cliente novo</h4><div class="formgrid"><div><label>Até 4 categorias (%)</label><input id="com_novo_1" type="number" step="0.1" min="0" value="${c.novo?.[0]?.pct??1}"></div><div><label>De 5 a 6 categorias (%)</label><input id="com_novo_2" type="number" step="0.1" min="0" value="${c.novo?.[1]?.pct??1.5}"></div><div><label>7 ou mais categorias (%)</label><input id="com_novo_3" type="number" step="0.1" min="0" value="${c.novo?.[2]?.pct??2}"></div></div><h4>Cliente da carteira</h4><div class="formgrid"><div><label>Até 3 categorias (%)</label><input id="com_cart_1" type="number" step="0.1" min="0" value="${c.carteira?.[0]?.pct??0}"></div><div><label>De 4 a 5 categorias (%)</label><input id="com_cart_2" type="number" step="0.1" min="0" value="${c.carteira?.[1]?.pct??1}"></div><div><label>6 ou mais categorias (%)</label><input id="com_cart_3" type="number" step="0.1" min="0" value="${c.carteira?.[2]?.pct??1.5}"></div><div><label>Bônus por caixa de fonte (R$)</label><input id="com_bonus" type="number" step="0.01" min="0" value="${c.bonusFonte??20}"></div></div><div class="actions"><button class="btn" onclick="salvarComissao()">Salvar comissão</button><button class="btn ghost" onclick="$('comissaoConfigOverlay').remove()">Cancelar</button></div></div></div>`);
+  document.body.insertAdjacentHTML('beforeend',`<div id="comissaoConfigOverlay" class="quick-overlay" onclick="if(event.target===this)this.remove()"><div class="quick-dialog wide"><div class="modal-head"><div><h3 style="margin:0">Editar comissão</h3><p class="section-note">As porcentagens usam somente o valor dos produtos. O frete conta para a meta, mas não gera comissão.</p></div><button class="x" onclick="$('comissaoConfigOverlay').remove()">✕</button></div><h4>Cliente novo</h4><div class="formgrid"><div><label>Até 4 categorias (%)</label><input id="com_novo_1" type="number" step="0.1" min="0" value="${c.novo?.[0]?.pct??1}"></div><div><label>De 5 a 6 categorias (%)</label><input id="com_novo_2" type="number" step="0.1" min="0" value="${c.novo?.[1]?.pct??1.5}"></div><div><label>7 ou mais categorias (%)</label><input id="com_novo_3" type="number" step="0.1" min="0" value="${c.novo?.[2]?.pct??2}"></div></div><h4>Cliente da carteira</h4><div class="formgrid"><div><label>Até 3 categorias (%)</label><input id="com_cart_1" type="number" step="0.1" min="0" value="${c.carteira?.[0]?.pct??0}"></div><div><label>De 4 a 5 categorias (%)</label><input id="com_cart_2" type="number" step="0.1" min="0" value="${c.carteira?.[1]?.pct??1}"></div><div><label>6 ou mais categorias (%)</label><input id="com_cart_3" type="number" step="0.1" min="0" value="${c.carteira?.[2]?.pct??1.5}"></div><div><label>Bônus por caixa de fonte (R$)</label><input id="com_bonus" type="number" step="0.01" min="0" value="${c.bonusFonte??20}"></div><div><label>Adicional da meta global (%)</label><input id="com_global" type="number" step="0.1" min="0" value="${c.pctGlobal??1}"></div></div><div class="actions"><button class="btn" onclick="salvarComissao()">Salvar comissão</button><button class="btn ghost" onclick="$('comissaoConfigOverlay').remove()">Cancelar</button></div></div></div>`);
 }
 
 async function salvarComissao(){
   const valor=id=>Math.max(0,Number($(id)?.value||0));
-  const metaMeses={...(state.comissao?.metaMeses||{})};
-  state.comissao={novo:[{min:0,max:4,pct:valor('com_novo_1')},{min:5,max:6,pct:valor('com_novo_2')},{min:7,max:99,pct:valor('com_novo_3')}],carteira:[{min:0,max:3,pct:valor('com_cart_1')},{min:4,max:5,pct:valor('com_cart_2')},{min:6,max:99,pct:valor('com_cart_3')}],bonusFonte:valor('com_bonus'),pctMeta:5,metaMeses};
+  const globalMeses={...(state.comissao?.globalMeses||{})};
+  state.comissao={novo:[{min:0,max:4,pct:valor('com_novo_1')},{min:5,max:6,pct:valor('com_novo_2')},{min:7,max:99,pct:valor('com_novo_3')}],carteira:[{min:0,max:3,pct:valor('com_cart_1')},{min:4,max:5,pct:valor('com_cart_2')},{min:6,max:99,pct:valor('com_cart_3')}],bonusFonte:valor('com_bonus'),pctGlobal:valor('com_global')||1,globalMeses};
   await cloudSave();$('comissaoConfigOverlay')?.remove();toast('✅ Comissão atualizada');faturamento();
 }
 
 async function alternarMetaComissao(mes){
   if(!state.comissao) state.comissao=JSON.parse(JSON.stringify(COMISSAO));
-  state.comissao.metaMeses={...(state.comissao.metaMeses||{})};
-  const ativa=!!state.comissao.metaMeses[mes];
+  state.comissao.globalMeses={...(state.comissao.globalMeses||{})};
+  const ativa=!!state.comissao.globalMeses[mes];
   if(ativa){
-    if(!confirm('Remover a comissão de 5% deste mês e voltar às porcentagens normais?')) return;
-    delete state.comissao.metaMeses[mes];
-    toast('Comissão de 5% removida deste mês');
+    if(!confirm('Remover o adicional de 1% da meta global deste mês?')) return;
+    delete state.comissao.globalMeses[mes];
+    toast('Adicional da meta global removido deste mês');
   }else{
-    if(!confirm('Confirmar meta batida? Todos os pedidos deste mês terão comissão de 5%.')) return;
-    state.comissao.metaMeses[mes]=true;
-    toast('🏆 Meta batida: comissão de 5% aplicada ao mês inteiro');
+    if(!confirm('Confirmar meta global batida? Será adicionado 1% sobre o valor dos produtos do mês, sem frete.')) return;
+    state.comissao.globalMeses[mes]=true;
+    toast('🏆 Meta global: adicional de 1% aplicado ao mês');
   }
   await cloudSave();
   faturamento();

@@ -28,7 +28,7 @@ function abrirCaixasFechadas(mes){
             const qtd=parseInt(p.caixas_fonte||0,10);
             return `<div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px;border:1px solid var(--border);border-radius:14px;background:rgba(255,255,255,.025)">
               <div style="min-width:0">
-                <b style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c?.loja||c?.nome||'Cliente')}${p.obs?` — Pedido ${esc(p.obs)}`:''}</b>
+                <b style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c?.loja||c?.nome||'Cliente')}${p.obs?` — ${esc(p.obs)}`:''}</b>
                 <small style="display:block;color:var(--muted);margin-top:3px">${fmt(p.data)} • ${fmtMoney(p.valor)}</small>
               </div>
               <div style="display:flex;align-items:center;gap:7px">

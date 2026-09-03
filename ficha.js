@@ -7,7 +7,7 @@ function openClient(id, tab='resumo'){
   _clientTab = tab;
   const tabs = ['resumo','fiscal','categorias','pedidos','rma','histórico','lembretes','relacionamento'];
   const dias = diasSemContato(c);
-  const cats = (c.categorias||[]).length;
+  const cats = normalizarCategorias(c.categorias||[]).length;
   const pedidosCliente = state.pedidos.filter(p=>p.cliente_id===id);
   const faturamento = pedidosCliente.reduce((s,p)=>s+parseFloat(p.valor||0),0);
   const rmasCliente = state.rmas.filter(r=>r.cliente_id===id&&!r.resolvido);
@@ -64,7 +64,7 @@ function clientTabContent(c, tab){
 function tabResumo(c){
   const pedidos = state.pedidos.filter(p=>p.cliente_id===c.id);
   const faturamento = pedidos.reduce((s,p)=>s+parseFloat(p.valor||0),0);
-  const cats = (c.categorias||[]).length;
+  const cats = normalizarCategorias(c.categorias||[]).length;
   const ultimoPedido = pedidos[0];
   return `
     <div class="grid two" style="margin-bottom:16px">
@@ -177,10 +177,10 @@ async function salvarFiscal(id){
 }
 
 function tabCategorias(c){
-  const cats = c.categorias||[];
+  const cats = normalizarCategorias(c.categorias||[]);
   const pedidos = state.pedidos.filter(p=>p.cliente_id===c.id);
   const catsPorPedido = {};
-  pedidos.forEach(p=>(p.categorias||[]).forEach(cat=>{catsPorPedido[cat]=(catsPorPedido[cat]||0)+1;}));
+  pedidos.forEach(p=>normalizarCategorias(p.categorias||[]).forEach(cat=>{catsPorPedido[cat]=(catsPorPedido[cat]||0)+1;}));
 
   // Comissão correta conforme tipo de cliente
   const tipoC = c.tipo_cliente||'novo';
@@ -218,7 +218,7 @@ function tabPedidos(c){
     </div>
     ${pedidos.length?pedidos.map(p=>{
       const com = calcComissao(p);
-      const categoriasPedido=(p.categorias||[]).map(id=>CATEGORIAS.find(cat=>cat.id===id)).filter(Boolean);
+      const categoriasPedido=normalizarCategorias(p.categorias||[]).map(id=>CATEGORIAS.find(cat=>cat.id===id)).filter(Boolean);
       return `<div class="item" style="margin-bottom:8px;flex-wrap:wrap;gap:8px">
         <div style="flex:1">
           <b>${fmt(p.data)} — ${fmtMoney(p.valor)}</b>
@@ -426,7 +426,8 @@ function novoPedido(clienteId, pedidoId=null){
   const c=state.clientes.find(x=>x.id===clienteId);
   const pedido=pedidoId?state.pedidos.find(x=>x.id===pedidoId):null;
   const rmasPend=state.rmas.filter(r=>r.cliente_id===clienteId&&!r.resolvido);
-  const categoriasSelecionadas=pedido?.categorias||c?.categorias||[];
+  const categoriasSelecionadas=normalizarCategorias(pedido?.categorias||c?.categorias||[]);
+  const detalhe=pedido?detalhesPedido(pedido.id):{};
   const html=`
     <div style="background:rgba(0,0,0,.5);backdrop-filter:blur(8px);position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;padding:20px" id="pedidoOverlay" onclick="if(event.target===this)this.remove()">
       <div style="background:var(--panel);border-radius:24px;padding:24px;width:min(560px,100%);border:1px solid var(--line);max-height:90vh;overflow-y:auto">
@@ -440,7 +441,8 @@ function novoPedido(clienteId, pedidoId=null){
             </select>
           </div>
           <div><label>Data do pedido</label><input type="date" id="ped_data" value="${pedido?.data||todayISO()}" oninput="calcPreviewComissao()"></div>
-          <div><label>Valor total (R$) *</label><input type="number" id="ped_valor" placeholder="0.00" value="${pedido?.valor??''}" oninput="calcPreviewComissao()"></div>
+          <div><label>Valor dos produtos (R$) *</label><input type="number" id="ped_valor" placeholder="0.00" value="${pedido?.valor??''}" oninput="calcPreviewComissao()"></div>
+          <div><label>Frete (R$)</label><input type="number" id="ped_frete" min="0" step="0.01" placeholder="0.00" value="${detalhe.frete??0}" oninput="calcPreviewComissao()"></div>
           <div><label>Caixas de fonte fechadas</label><input type="number" id="ped_fontes" value="${pedido?.caixas_fonte??0}" min="0" oninput="calcPreviewComissao()"></div>
           <div class="full"><label>Observações / número do pedido</label><input id="ped_obs" value="${esc(pedido?.obs||'')}" placeholder="Número do pedido, observações..."></div>
         </div>
@@ -449,7 +451,7 @@ function novoPedido(clienteId, pedidoId=null){
           ${CATEGORIAS.map(cat=>`
             <div class="cat-item ${categoriasSelecionadas.includes(cat.id)?'selected':''}" onclick="this.classList.toggle('selected');calcPreviewComissao()" data-cat="${cat.id}">
               <div class="cat-icon">${cat.icon}</div>
-              <div style="font-size:11px">${cat.label}</div>
+              <div style="font-size:11px">${cat.label}</div><small style="font-size:9px;color:var(--muted)">mín. ${cat.minimo}</small>
             </div>`).join('')}
         </div>
         <div id="comissaoPreview" style="background:rgba(124,58,237,.12);border:1px solid rgba(168,85,247,.3);border-radius:16px;padding:16px;margin-top:16px">
@@ -467,6 +469,7 @@ function novoPedido(clienteId, pedidoId=null){
 
 function calcPreviewComissao(){
   const valor=parseFloat($('ped_valor')?.value||0);
+  const frete=Math.max(0,parseFloat($('ped_frete')?.value||0));
   const fontes=parseInt($('ped_fontes')?.value||0);
   const tipo=$('ped_tipo')?.value||'novo';
   const cats=[...document.querySelectorAll('#pedidoOverlay .cat-item.selected')].map(el=>el.dataset.cat);
@@ -475,9 +478,10 @@ function calcPreviewComissao(){
   if(!valor){ prev.innerHTML='<div style="color:var(--muted);font-size:13px">Informe o valor do pedido</div>'; return; }
   const com=calcComissao({tipo_cliente:tipo,valor,caixas_fonte:fontes,categorias:cats,data:$('ped_data')?.value||todayISO()});
   prev.innerHTML=`
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
       <div class="metric"><small>Categorias</small><strong style="font-size:22px">${cats.length}</strong></div>
       <div class="metric"><small>% Comissão</small><strong style="font-size:22px">${com.pct}%</strong></div>
+      <div class="metric"><small>Total para meta</small><strong style="font-size:18px">${fmtMoney(valor+frete)}</strong></div>
       <div class="metric"><small>Bônus fonte</small><strong style="font-size:22px">${fmtMoney(com.bonusFonte)}</strong></div>
     </div>
     <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center">
@@ -492,15 +496,18 @@ async function savePedido(clienteId, pedidoId=null){
   const cats=[...document.querySelectorAll('#pedidoOverlay .cat-item.selected')].map(el=>el.dataset.cat);
   const tipo=$('ped_tipo')?.value||'novo';
   const data=$('ped_data')?.value||todayISO();
+  const frete=Math.max(0,parseFloat($('ped_frete')?.value||0));
   const com=calcComissao({tipo_cliente:tipo,valor,caixas_fonte:parseInt($('ped_fontes')?.value||0),categorias:cats,data});
   const anterior=pedidoId?state.pedidos.find(x=>x.id===pedidoId):null;
   const p={...anterior,id:pedidoId||uuid(),cliente_id:clienteId,tipo_cliente:tipo,valor,caixas_fonte:$('ped_fontes')?.value||0,categorias:cats,obs:$('ped_obs')?.value||'',comissao:com.total,comissao_pct:com.pct,bonus_fonte:com.bonusFonte,data,created_at:anterior?.created_at||new Date().toISOString(),updated_at:new Date().toISOString()};
   if(pedidoId) state.pedidos=state.pedidos.map(x=>x.id===pedidoId?p:x);
   else state.pedidos.unshift(p);
+  state.pedidoDetalhes={...(state.pedidoDetalhes||{}),[p.id]:{...(state.pedidoDetalhes?.[p.id]||{}),frete,valor_total:valor+frete,updated_at:new Date().toISOString()}};
   // Atualizar categorias do cliente
   const c=state.clientes.find(x=>x.id===clienteId);
-  if(c){ c.categorias=[...new Set([...(c.categorias||[]),...cats])]; c.tipo_cliente=tipo; c.status='❤️ Pós-venda / Recompra'; c.updated_at=new Date().toISOString(); await upsertRow('clientes',c); }
+  if(c){ c.categorias=[...new Set([...normalizarCategorias(c.categorias||[]),...cats])]; c.tipo_cliente=tipo; c.status='❤️ Pós-venda / Recompra'; c.updated_at=new Date().toISOString(); await upsertRow('clientes',c); }
   await upsertRow('pedidos',p);
+  await cloudSave();
   toast(`✅ Pedido ${pedidoId?'atualizado':'salvo'}! Comissão: ${fmtMoney(com.total)}`);
   $('pedidoOverlay')?.remove();
   if(document.getElementById('prospeccao')?.classList.contains('active') && typeof prospeccao==='function') prospeccao('fechados');
@@ -511,7 +518,9 @@ async function savePedido(clienteId, pedidoId=null){
 
 async function deletePedido(id, clienteId){
   state.pedidos=state.pedidos.filter(x=>x.id!==id);
+  if(state.pedidoDetalhes) delete state.pedidoDetalhes[id];
   await deleteRow('pedidos',id);
+  await cloudSave();
   openClient(clienteId,'pedidos');
 }
 
