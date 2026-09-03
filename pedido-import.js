@@ -27,10 +27,14 @@ function categoriaProduto(nome){
 }
 function extrairItensPedido(texto){
   const ls=texto.split(/\n/).map(x=>x.trim()).filter(Boolean),itens=[];
-  for(let i=0;i<ls.length;i++){const m=ls[i].match(/^(\d+)\s+(\d+)\s+(.+?)\s+(\d+)\s+(?:UN|PC|PÇ)\b/i);if(!m)continue;let nome=m[3].trim();
+  for(let i=0;i<ls.length;i++){
+    const comDescricao=ls[i].match(/^(\d+)\s+(\d+)\s+(.+?\D.+?)\s+(\d+)\s+(?:UN|PC|PÇ)\b/i);
+    const semDescricao=ls[i].match(/^(\d+)\s+(\d+)\s+(\d+)\s+(?:UN|PC|PÇ)\b/i);
+    const m=comDescricao||semDescricao;if(!m)continue;
+    const quantidade=Number(comDescricao?m[4]:m[3]);let nome=comDescricao?m[3].trim():'';
     if((!categoriaProduto(nome)||nome.length<8)&&i>0&&!/^(20W|30W|USB|#|C[oó]digo|Produto)$/i.test(ls[i-1])&&!/Preço L[ií]quido|Subtotal/i.test(ls[i-1]))nome=(ls[i-1]+' '+nome).trim();
     if(i+1<ls.length&&!/^\d+\s+\d+/.test(ls[i+1])&&!/Qtde\. Total|Total \(/i.test(ls[i+1]))nome+=' '+ls[i+1];
-    itens.push({item:Number(m[1]),codigo:m[2],produto:nome,quantidade:Number(m[4]),categoria:categoriaProduto(nome)});
+    itens.push({item:Number(m[1]),codigo:m[2],produto:nome.trim(),quantidade,categoria:categoriaProduto(nome)});
   }return itens;
 }
 function analisarPedidoMercos(texto){
