@@ -218,13 +218,16 @@ function tabPedidos(c){
     </div>
     ${pedidos.length?pedidos.map(p=>{
       const com = calcComissao(p);
+      const categoriasPedido=(p.categorias||[]).map(id=>CATEGORIAS.find(cat=>cat.id===id)).filter(Boolean);
       return `<div class="item" style="margin-bottom:8px;flex-wrap:wrap;gap:8px">
         <div style="flex:1">
           <b>${fmt(p.data)} — ${fmtMoney(p.valor)}</b>
-          <span>${(p.categorias||[]).map(id=>CATEGORIAS.find(c=>c.id===id)?.icon||id).join(' ')} ${p.caixas_fonte?`• ${p.caixas_fonte} cx fonte`:''}</span>
+          <span>${categoriasPedido.map(cat=>`${cat.icon} ${cat.label}`).join(' • ')||'Sem categorias'} ${p.caixas_fonte?`• 📦 ${p.caixas_fonte} caixa${Number(p.caixas_fonte)!==1?'s':''} de fonte`:''}</span>
+          ${p.obs?`<span>📝 ${esc(p.obs)}</span>`:''}
           <span style="color:#a78bfa">Comissão: ${fmtMoney(com.total)} (${com.pct}% + bônus fonte)</span>
         </div>
         <span class="tag ${p.tipo_cliente==='carteira'?'carteira':'novo'}">${p.tipo_cliente==='carteira'?'Carteira':'Novo'}</span>
+        <button class="btn small ghost" onclick="novoPedido('${c.id}','${p.id}')">✏️ Editar</button>
         <button class="btn small ghost danger" onclick="deletePedido('${p.id}','${c.id}')">🗑️</button>
       </div>`;}).join('')
     :`<div class="empty">Nenhum pedido registrado.</div>`}`;
@@ -419,30 +422,32 @@ async function deleteRma(id, clienteId){
 }
 
 // ── PEDIDOS ───────────────────────────────────────────────────────
-function novoPedido(clienteId){
+function novoPedido(clienteId, pedidoId=null){
   const c=state.clientes.find(x=>x.id===clienteId);
+  const pedido=pedidoId?state.pedidos.find(x=>x.id===pedidoId):null;
   const rmasPend=state.rmas.filter(r=>r.cliente_id===clienteId&&!r.resolvido);
+  const categoriasSelecionadas=pedido?.categorias||c?.categorias||[];
   const html=`
     <div style="background:rgba(0,0,0,.5);backdrop-filter:blur(8px);position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;padding:20px" id="pedidoOverlay" onclick="if(event.target===this)this.remove()">
       <div style="background:var(--panel);border-radius:24px;padding:24px;width:min(560px,100%);border:1px solid var(--line);max-height:90vh;overflow-y:auto">
-        <h3 style="margin:0 0 4px">💰 Novo pedido — ${esc(c?.loja||'')}</h3>
+        <h3 style="margin:0 0 4px">${pedido?'✏️ Editar pedido':'💰 Novo pedido'} — ${esc(c?.loja||'')}</h3>
         ${rmasPend.length?`<div style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:14px;padding:12px;margin-bottom:16px"><b style="color:#fca5a5">⚠️ ${rmasPend.length} RMA pendente${rmasPend.length>1?'s':''}:</b> ${rmasPend.map(r=>`${esc(r.produto)} (${r.qtd}x)`).join(', ')}</div>`:''}
         <div class="formgrid">
           <div><label>Tipo de cliente</label>
             <select id="ped_tipo">
-              <option value="novo" ${(c?.tipo_cliente||'novo')==='novo'?'selected':''}>🆕 Novo</option>
-              <option value="carteira" ${c?.tipo_cliente==='carteira'?'selected':''}>👥 Carteira</option>
+              <option value="novo" ${(pedido?.tipo_cliente||c?.tipo_cliente||'novo')==='novo'?'selected':''}>🆕 Novo</option>
+              <option value="carteira" ${(pedido?.tipo_cliente||c?.tipo_cliente)==='carteira'?'selected':''}>👥 Carteira</option>
             </select>
           </div>
-          <div><label>Data do pedido</label><input type="date" id="ped_data" value="${todayISO()}"></div>
-          <div><label>Valor total (R$) *</label><input type="number" id="ped_valor" placeholder="0.00" oninput="calcPreviewComissao()"></div>
-          <div><label>Caixas de fonte fechadas</label><input type="number" id="ped_fontes" value="0" min="0" oninput="calcPreviewComissao()"></div>
-          <div class="full"><label>Observações</label><input id="ped_obs" placeholder="Número do pedido, observações..."></div>
+          <div><label>Data do pedido</label><input type="date" id="ped_data" value="${pedido?.data||todayISO()}" oninput="calcPreviewComissao()"></div>
+          <div><label>Valor total (R$) *</label><input type="number" id="ped_valor" placeholder="0.00" value="${pedido?.valor??''}" oninput="calcPreviewComissao()"></div>
+          <div><label>Caixas de fonte fechadas</label><input type="number" id="ped_fontes" value="${pedido?.caixas_fonte??0}" min="0" oninput="calcPreviewComissao()"></div>
+          <div class="full"><label>Observações / número do pedido</label><input id="ped_obs" value="${esc(pedido?.obs||'')}" placeholder="Número do pedido, observações..."></div>
         </div>
         <label style="margin-top:16px">Categorias deste pedido</label>
         <div class="cat-grid" style="margin-top:8px">
           ${CATEGORIAS.map(cat=>`
-            <div class="cat-item ${(c?.categorias||[]).includes(cat.id)?'selected':''}" onclick="this.classList.toggle('selected');calcPreviewComissao()" data-cat="${cat.id}">
+            <div class="cat-item ${categoriasSelecionadas.includes(cat.id)?'selected':''}" onclick="this.classList.toggle('selected');calcPreviewComissao()" data-cat="${cat.id}">
               <div class="cat-icon">${cat.icon}</div>
               <div style="font-size:11px">${cat.label}</div>
             </div>`).join('')}
@@ -451,7 +456,7 @@ function novoPedido(clienteId){
           <div style="color:var(--muted);font-size:13px">Selecione categorias e valor para ver a comissão</div>
         </div>
         <div class="actions" style="margin-top:16px">
-          <button class="btn" onclick="savePedido('${clienteId}')">💾 Salvar pedido</button>
+          <button class="btn" onclick="savePedido('${clienteId}',${pedidoId?`'${pedidoId}'`:'null'})">💾 ${pedido?'Salvar alterações':'Salvar pedido'}</button>
           <button class="btn ghost" onclick="$('pedidoOverlay').remove()">Cancelar</button>
         </div>
       </div>
@@ -468,7 +473,7 @@ function calcPreviewComissao(){
   const prev=$('comissaoPreview');
   if(!prev) return;
   if(!valor){ prev.innerHTML='<div style="color:var(--muted);font-size:13px">Informe o valor do pedido</div>'; return; }
-  const com=calcComissao({tipo_cliente:tipo,valor,caixas_fonte:fontes,categorias:cats});
+  const com=calcComissao({tipo_cliente:tipo,valor,caixas_fonte:fontes,categorias:cats,data:$('ped_data')?.value||todayISO()});
   prev.innerHTML=`
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
       <div class="metric"><small>Categorias</small><strong style="font-size:22px">${cats.length}</strong></div>
@@ -481,19 +486,22 @@ function calcPreviewComissao(){
     </div>`;
 }
 
-async function savePedido(clienteId){
+async function savePedido(clienteId, pedidoId=null){
   const valor=parseFloat($('ped_valor')?.value||0);
   if(!valor){ toast('⚠️ Informe o valor do pedido'); return; }
   const cats=[...document.querySelectorAll('#pedidoOverlay .cat-item.selected')].map(el=>el.dataset.cat);
   const tipo=$('ped_tipo')?.value||'novo';
-  const com=calcComissao({tipo_cliente:tipo,valor,caixas_fonte:parseInt($('ped_fontes')?.value||0),categorias:cats});
-  const p={id:uuid(),cliente_id:clienteId,tipo_cliente:tipo,valor,caixas_fonte:$('ped_fontes')?.value||0,categorias:cats,obs:$('ped_obs')?.value||'',comissao:com.total,comissao_pct:com.pct,bonus_fonte:com.bonusFonte,data:$('ped_data')?.value||todayISO(),created_at:new Date().toISOString()};
-  state.pedidos.unshift(p);
+  const data=$('ped_data')?.value||todayISO();
+  const com=calcComissao({tipo_cliente:tipo,valor,caixas_fonte:parseInt($('ped_fontes')?.value||0),categorias:cats,data});
+  const anterior=pedidoId?state.pedidos.find(x=>x.id===pedidoId):null;
+  const p={...anterior,id:pedidoId||uuid(),cliente_id:clienteId,tipo_cliente:tipo,valor,caixas_fonte:$('ped_fontes')?.value||0,categorias:cats,obs:$('ped_obs')?.value||'',comissao:com.total,comissao_pct:com.pct,bonus_fonte:com.bonusFonte,data,created_at:anterior?.created_at||new Date().toISOString(),updated_at:new Date().toISOString()};
+  if(pedidoId) state.pedidos=state.pedidos.map(x=>x.id===pedidoId?p:x);
+  else state.pedidos.unshift(p);
   // Atualizar categorias do cliente
   const c=state.clientes.find(x=>x.id===clienteId);
   if(c){ c.categorias=[...new Set([...(c.categorias||[]),...cats])]; c.tipo_cliente=tipo; c.status='❤️ Pós-venda / Recompra'; c.updated_at=new Date().toISOString(); await upsertRow('clientes',c); }
   await upsertRow('pedidos',p);
-  toast(`✅ Pedido salvo! Comissão: ${fmtMoney(com.total)}`);
+  toast(`✅ Pedido ${pedidoId?'atualizado':'salvo'}! Comissão: ${fmtMoney(com.total)}`);
   $('pedidoOverlay')?.remove();
   if(document.getElementById('prospeccao')?.classList.contains('active') && typeof prospeccao==='function') prospeccao('fechados');
   else if(document.getElementById('faturamento')?.classList.contains('active')) faturamento();
