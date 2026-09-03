@@ -77,18 +77,15 @@ async function cloudLoad(){
       if(error){ ok=false; console.warn('cloudLoad erro em '+t, error.message); continue; }
       if(data && t==='pedidos'){
         const remotosPorId=new Map(data.map(item=>[item.id,item]));
-        const recuperar=[];
-        locais.forEach(item=>{
-          if(!remotosPorId.has(item.id) || item.updated_at){
-            remotosPorId.set(item.id,item);
-            recuperar.push(item);
-          }
-        });
+        // A nuvem é a fonte principal. Só recupera itens marcados explicitamente
+        // como pendentes por uma falha de conexão; pedidos apagados não voltam.
+        const recuperar=locais.filter(item=>item._sync_pending===true);
+        recuperar.forEach(item=>remotosPorId.set(item.id,item));
         state[t]=[...remotosPorId.values()].sort((a,b)=>(b.created_at||b.data||'').localeCompare(a.created_at||a.data||''));
         if(recuperar.length){
           const {error:recError}=await sb.from('pedidos').upsert(recuperar.map(pedidoParaNuvem),{onConflict:'id'});
           if(recError){ ok=false; console.warn('Falha ao recuperar pedidos locais:',recError.message); }
-          else toast(`✅ ${recuperar.length} pedido${recuperar.length!==1?'s':''} recuperado${recuperar.length!==1?'s':''} e salvo${recuperar.length!==1?'s':''} na nuvem`,6000);
+          else recuperar.forEach(item=>delete item._sync_pending);
         }
       }else if(data) state[t] = data;
     }
@@ -115,12 +112,14 @@ async function cloudSave(){
 }
 
 async function upsertRow(table, row){
+  if(table==='pedidos') row._sync_pending=true;
   localSave();
   if(!sb) return;
   try {
     const payload=table==='pedidos'?pedidoParaNuvem(row):row;
     const {error} = await sb.from(table).upsert(payload,{onConflict:'id'});
     if(error){ cloud=false; console.warn('upsertRow erro em '+table+':', error.message); toast('⚠️ Salvo neste aparelho, mas a nuvem falhou',5000); return false; }
+    if(table==='pedidos'){ delete row._sync_pending; localSave(); }
     console.log('✅ Salvo em '+table+':', row.id); return true;
   } catch(e){ cloud=false; console.warn('upsertRow error',e); toast('⚠️ Salvo neste aparelho, mas a nuvem falhou',5000); return false; }
 }
