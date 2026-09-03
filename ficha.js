@@ -491,11 +491,14 @@ async function savePedido(clienteId){
   state.pedidos.unshift(p);
   // Atualizar categorias do cliente
   const c=state.clientes.find(x=>x.id===clienteId);
-  if(c){ c.categorias=[...new Set([...(c.categorias||[]),...cats])]; c.tipo_cliente=tipo; c.updated_at=new Date().toISOString(); await upsertRow('clientes',c); }
+  if(c){ c.categorias=[...new Set([...(c.categorias||[]),...cats])]; c.tipo_cliente=tipo; c.status='❤️ Pós-venda / Recompra'; c.updated_at=new Date().toISOString(); await upsertRow('clientes',c); }
   await upsertRow('pedidos',p);
   toast(`✅ Pedido salvo! Comissão: ${fmtMoney(com.total)}`);
   $('pedidoOverlay')?.remove();
-  openClient(clienteId,'pedidos');
+  if(document.getElementById('prospeccao')?.classList.contains('active') && typeof prospeccao==='function') prospeccao('fechados');
+  else if(document.getElementById('faturamento')?.classList.contains('active')) faturamento();
+  else if(document.getElementById('posvenda')?.classList.contains('active') && typeof posvenda==='function') posvenda();
+  else openClient(clienteId,'pedidos');
 }
 
 async function deletePedido(id, clienteId){
