@@ -641,6 +641,8 @@ function faturamento(){
   const fatNovo=pedMes.filter(p=>p.tipo_cliente==='novo').reduce((s,p)=>s+parseFloat(p.valor||0),0);
   const fatCart=pedMes.filter(p=>p.tipo_cliente==='carteira').reduce((s,p)=>s+parseFloat(p.valor||0),0);
   const comTotal=pedMes.reduce((s,p)=>s+calcComissao(p).total,0);
+  const caixasVendidas=pedMes.reduce((s,p)=>s+parseInt(p.caixas_fonte||0,10),0);
+  const bonusCaixas=pedMes.reduce((s,p)=>s+calcComissao(p).bonusFonte,0);
   const metaComissaoAtiva=!!state.comissao?.metaMeses?.[mes];
   const meta=state.metas?.faturamentoMes||50000;
   const pct=Math.min(100,Math.round(fatTotal/meta*100));
@@ -680,6 +682,8 @@ function faturamento(){
       <div class="card metric"><small>👥 Carteira</small><strong>${fmtMoney(fatCart)}</strong></div>
       <div class="card metric"><small>💸 Comissão</small><strong style="color:#a78bfa">${fmtMoney(comTotal)}</strong></div>
       <button class="card metric metric-button" onclick="abrirPedidosMes('${mes}')"><small>📦 Pedidos</small><strong>${pedMes.length}</strong><span class="metric-hint">Clique para visualizar</span></button>
+      <div class="card metric"><small>📦 Caixas fechadas</small><strong>${caixasVendidas}</strong><span class="metric-hint">Vendidas neste mês</span></div>
+      <div class="card metric"><small>💵 Bônus das caixas</small><strong style="color:#86efac">${fmtMoney(bonusCaixas)}</strong><span class="metric-hint">Valor a receber</span></div>
     </div>
     <div class="card" style="margin-bottom:20px">
       <div class="section-heading">
