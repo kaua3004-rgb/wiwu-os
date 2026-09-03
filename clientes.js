@@ -122,6 +122,7 @@ function cfBasico(c={}){
     <div><label>CEP</label><input id="cf_cep" value="${esc(c.cep||cache.cep||'')}" oninput="cfBuscaCep(this.value)" placeholder="00000-000"></div>
     <div><label>Status no pipeline</label>
       <select id="cf_status">
+        ${c.status&&!state.pipeline.includes(c.status)?`<option selected>${esc(c.status)}</option>`:''}
         ${state.pipeline.map(s=>`<option ${c.status===s?'selected':''}>${esc(s)}</option>`).join('')}
       </select>
     </div>
@@ -283,6 +284,12 @@ async function saveClient(id){
   const loja=$('cf_loja')?.value?.trim();
   const nome=$('cf_nome')?.value?.trim();
   if(!loja&&!nome){ toast('⚠️ Preencha o nome da loja'); return; }
+
+  const novoCnpj=($('cf_cnpj')?.value||'').replace(/\D/g,'');
+  const novoWpp=($('cf_whatsapp')?.value||'').replace(/\D/g,'');
+  const novoInsta=($('cf_instagram')?.value||'').toLowerCase().replace('@','').trim();
+  const duplicado=state.clientes.find(c=>c.id!==id&&((novoCnpj&&String(c.cnpj||'').replace(/\D/g,'')===novoCnpj)||(novoWpp&&String(c.whatsapp||'').replace(/\D/g,'')===novoWpp)||(novoInsta&&String(c.instagram||'').toLowerCase().replace('@','').trim()===novoInsta)));
+  if(duplicado){toast(`⚠️ Possível duplicado: ${duplicado.loja||duplicado.nome}`,5000);return;}
 
   const cats=[...document.querySelectorAll('.cat-item.selected')].map(el=>el.dataset.cat);
   const ctNomes=[...document.querySelectorAll('.ct_nome')].map(el=>el.value);
