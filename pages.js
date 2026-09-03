@@ -26,7 +26,10 @@ function dashboard(){
   const due=pend.filter(l=>(l.data||today)<=today);
   const hot=state.clientes.filter(c=>c.temperatura==='Quente');
   const m=state.metas||{};
-  const reg=(state.registros&&state.registros[today])||{ligacoes:0,contatos:0};
+  const legado=(state.registros&&state.registros[today])||{ligacoes:0,contatos:0};
+  const autoHoje=typeof atividadesPeriodo==='function'?atividadesPeriodo(today.slice(0,7),today):{ligacoes:0,total:0};
+  const autoMes=typeof atividadesPeriodo==='function'?atividadesPeriodo(today.slice(0,7)):{total:0};
+  const reg={ligacoes:(legado.ligacoes||0)+autoHoje.ligacoes,contatos:(legado.contatos||0)+autoHoje.total};
   const pedidosMes=pedidosDoMes(today.slice(0,7));
   const fatTotal=pedidosMes.reduce((s,p)=>s+parseFloat(p.valor||0),0);
   const fatNovo=pedidosMes.filter(p=>p.tipo_cliente==='novo').reduce((s,p)=>s+parseFloat(p.valor||0),0);
@@ -73,7 +76,7 @@ function dashboard(){
         <strong>${reg.ligacoes}<span style="font-size:16px;color:var(--muted)">/${m.ligacoesDia||10}</span></strong>
         <div class="progress"><div class="progress-bar" style="width:${pctLig}%;background:#34d399"></div></div>
         <div style="display:flex;gap:6px;margin-top:8px">
-          <button class="btn" style="flex:1;font-size:18px;padding:8px" onclick="registrarAcao('ligacoes')">+1</button>
+          <button class="btn" style="flex:1;font-size:12px;padding:8px" onclick="showPage('prospeccao')">Registrar na prospecção</button>
           <button class="btn ghost" style="font-size:11px;padding:7px" onclick="editMeta('ligacoesDia')">✏️</button>
         </div>
       </div>
@@ -82,7 +85,7 @@ function dashboard(){
         <strong>${reg.contatos}<span style="font-size:16px;color:var(--muted)">/${m.contatosDia||15}</span></strong>
         <div class="progress"><div class="progress-bar" style="width:${pctCon}%;background:#818cf8"></div></div>
         <div style="display:flex;gap:6px;margin-top:8px">
-          <button class="btn" style="flex:1;font-size:18px;padding:8px" onclick="registrarAcao('contatos')">+1</button>
+          <button class="btn" style="flex:1;font-size:12px;padding:8px" onclick="showPage('prospeccao')">Registrar na prospecção</button>
           <button class="btn ghost" style="font-size:11px;padding:7px" onclick="editMeta('contatosDia')">✏️</button>
         </div>
       </div>
@@ -94,8 +97,8 @@ function dashboard(){
       </div>
       <div class="card metric" onclick="editMeta('contatosMes')" style="cursor:pointer">
         <small>🎯 Meta mensal</small>
-        <strong>${state.clientes.length}<span style="font-size:16px;color:var(--muted)">/${m.contatosMes||40}</span></strong>
-        <div class="progress"><div class="progress-bar" style="width:${Math.min(100,Math.round(state.clientes.length/(m.contatosMes||40)*100))}%;background:#f97316"></div></div>
+        <strong>${autoMes.total}<span style="font-size:16px;color:var(--muted)">/${m.contatosMes||40}</span></strong>
+        <div class="progress"><div class="progress-bar" style="width:${Math.min(100,Math.round(autoMes.total/(m.contatosMes||40)*100))}%;background:#f97316"></div></div>
         <span style="font-size:11px;color:var(--muted)">✏️ editar meta</span>
       </div>
     </div>
@@ -596,6 +599,41 @@ function ranking(){
 }
 
 // ── FATURAMENTO ───────────────────────────────────────────────────
+function mesesAte(mes, quantidade=6){
+  const [ano,mesNumero]=mes.split('-').map(Number);
+  return Array.from({length:quantidade},(_,i)=>{
+    const d=new Date(ano,mesNumero-1-i,1);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  }).reverse();
+}
+
+function analiseClientesFaturamento(mes){
+  const pedidos=pedidosValidos();
+  const mesesRecorrencia=mesesAte(mes,6);
+  const porCliente={};
+  pedidosDoMes(mes).forEach(p=>{
+    if(!porCliente[p.cliente_id]) porCliente[p.cliente_id]={valor:0,pedidos:0};
+    porCliente[p.cliente_id].valor+=parseFloat(p.valor||0);
+    porCliente[p.cliente_id].pedidos++;
+  });
+  const total=Object.values(porCliente).reduce((s,c)=>s+c.valor,0);
+  let acumulado=0;
+  return Object.entries(porCliente).map(([id,dados])=>{
+    const cliente=state.clientes.find(c=>c.id===id);
+    const mesesComCompra=mesesRecorrencia.filter(m=>pedidos.some(p=>p.cliente_id===id&&p.data?.slice(0,7)===m));
+    let sequencia=0;
+    for(let i=mesesRecorrencia.length-1;i>=0;i--){
+      if(mesesComCompra.includes(mesesRecorrencia[i])) sequencia++; else break;
+    }
+    return {id,cliente,valor:dados.valor,pedidos:dados.pedidos,mesesComCompra:mesesComCompra.length,sequencia};
+  }).filter(x=>x.cliente).sort((a,b)=>b.valor-a.valor).map(item=>{
+    const percentualAntes=total?acumulado/total*100:0;
+    const curva=percentualAntes<80?'A':percentualAntes<95?'B':'C';
+    acumulado+=item.valor;
+    return {...item,curva,participacao:total?item.valor/total*100:0};
+  });
+}
+
 function faturamento(){
   const mes=_mesFaturamento||todayISO().slice(0,7);
   const pedMes=pedidosDoMes(mes);
@@ -605,6 +643,11 @@ function faturamento(){
   const comTotal=pedMes.reduce((s,p)=>s+parseFloat(p.comissao||0),0);
   const meta=state.metas?.faturamentoMes||50000;
   const pct=Math.min(100,Math.round(fatTotal/meta*100));
+  const clientesMes=analiseClientesFaturamento(mes);
+  const clientesRecorrentes=clientesMes.filter(c=>c.mesesComCompra===6).length;
+  const mesAnterior=mesesAte(mes,2)[0];
+  const fatAnterior=pedidosDoMes(mesAnterior).reduce((s,p)=>s+parseFloat(p.valor||0),0);
+  const variacao=fatAnterior?((fatTotal-fatAnterior)/fatAnterior*100):null;
 
   // Por categoria
   const catFat={};
@@ -615,7 +658,9 @@ function faturamento(){
       <div class="hello"><h2>💰 Faturamento</h2><p>${new Date(mes+'-02T12:00:00').toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}</p></div>
       <div class="row">
         <input type="month" value="${mes}" onchange="_mesFaturamento=this.value;faturamento()" style="max-width:170px">
+        <button class="btn" onclick="selecionarClientePedido()">+ Adicionar venda</button>
         <button class="btn ghost" onclick="editMeta('faturamentoMes')">✏️ Editar meta</button>
+        <button class="btn ghost" onclick="editarComissao()">💸 Editar comissão</button>
         <button class="btn ghost" onclick="limparPedidosOrfaos()">🧹 Corrigir</button>
       </div>
     </div>
@@ -626,12 +671,29 @@ function faturamento(){
       </div>
       <div class="progress" style="height:10px"><div class="progress-bar" style="width:${pct}%;background:linear-gradient(90deg,var(--purple),var(--purple2))"></div></div>
       <div style="text-align:right;font-size:13px;color:var(--muted);margin-top:6px">${pct}% da meta</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:8px">Mês anterior: <strong>${fmtMoney(fatAnterior)}</strong> ${variacao===null?'':`<span style="color:${variacao>=0?'#86efac':'#fca5a5'}">${variacao>=0?'↑':'↓'} ${Math.abs(variacao).toFixed(1).replace('.',',')}%</span>`}</div>
     </div>
     <div class="grid cards" style="margin-bottom:20px">
       <div class="card metric"><small>🆕 Novos</small><strong>${fmtMoney(fatNovo)}</strong></div>
       <div class="card metric"><small>👥 Carteira</small><strong>${fmtMoney(fatCart)}</strong></div>
       <div class="card metric"><small>💸 Comissão</small><strong style="color:#a78bfa">${fmtMoney(comTotal)}</strong></div>
       <div class="card metric"><small>📦 Pedidos</small><strong>${pedMes.length}</strong></div>
+    </div>
+    <div class="card" style="margin-bottom:20px">
+      <div class="section-heading">
+        <div><h3 class="section-title" style="margin-bottom:4px">Clientes que compraram no mês</h3><div class="section-note">Curva ABC pelo faturamento do mês • recorrência dos últimos 6 meses</div></div>
+        <div class="recurring-summary">🔁 ${clientesRecorrentes} comprando todo mês</div>
+      </div>
+      <div class="client-revenue-list">
+        ${clientesMes.map(c=>`
+          <button class="client-revenue-row" onclick="openClient('${c.id}')">
+            <span class="abc-badge abc-${c.curva.toLowerCase()}">${c.curva}</span>
+            <span class="client-revenue-name"><strong>${esc(c.cliente.loja||c.cliente.nome)}</strong><small>${c.pedidos} pedido${c.pedidos!==1?'s':''} • ${c.participacao.toFixed(1).replace('.',',')}% do mês</small></span>
+            <span class="client-recurrence ${c.mesesComCompra===6?'is-recurring':''}"><strong>${c.mesesComCompra}/6 meses</strong><small>${c.mesesComCompra===6?'Compra todo mês':c.sequencia>1?`${c.sequencia} meses seguidos`:'Recorrência'}</small></span>
+            <span class="client-revenue-value">${fmtMoney(c.valor)}</span><span class="client-revenue-arrow">›</span>
+          </button>`).join('')||'<div class="empty">Nenhum cliente comprou neste mês.</div>'}
+      </div>
+      ${clientesMes.length?`<div class="abc-legend"><span><b class="abc-dot abc-a">A</b> primeiros 80%</span><span><b class="abc-dot abc-b">B</b> próximos 15%</span><span><b class="abc-dot abc-c">C</b> últimos 5%</span></div>`:''}
     </div>
     <div class="card">
       <h3 class="section-title">Por categoria</h3>
@@ -651,6 +713,24 @@ function faturamento(){
 }
 
 // ── CONCORRENTES ──────────────────────────────────────────────────
+function selecionarClientePedido(){
+  const lista=[...state.clientes].sort((a,b)=>(a.loja||a.nome||'').localeCompare(b.loja||b.nome||''));
+  document.body.insertAdjacentHTML('beforeend',`<div id="selecionarPedidoOverlay" class="quick-overlay" onclick="if(event.target===this)this.remove()"><div class="quick-dialog"><h3>Adicionar venda</h3><p class="section-note">Escolha o cliente. A data do pedido pode ser de qualquer mês.</p><input id="buscaClientePedido" placeholder="Buscar cliente..." oninput="filtrarClientesPedido(this.value)"><div id="listaClientesPedido" class="quick-list">${lista.map(c=>itemSelecionarClientePedido(c)).join('')}</div><button class="btn ghost" onclick="$('selecionarPedidoOverlay').remove()">Cancelar</button></div></div>`);
+}
+
+function editarComissao(){
+  const c=state.comissao||JSON.parse(JSON.stringify(COMISSAO));
+  document.body.insertAdjacentHTML('beforeend',`<div id="comissaoConfigOverlay" class="quick-overlay" onclick="if(event.target===this)this.remove()"><div class="quick-dialog wide"><div class="modal-head"><div><h3 style="margin:0">Editar comissão</h3><p class="section-note">Altere as porcentagens aplicadas aos próximos cálculos.</p></div><button class="x" onclick="$('comissaoConfigOverlay').remove()">✕</button></div><h4>Cliente novo</h4><div class="formgrid"><div><label>Até 4 categorias (%)</label><input id="com_novo_1" type="number" step="0.1" min="0" value="${c.novo?.[0]?.pct??1}"></div><div><label>De 5 a 6 categorias (%)</label><input id="com_novo_2" type="number" step="0.1" min="0" value="${c.novo?.[1]?.pct??1.5}"></div><div><label>7 ou mais categorias (%)</label><input id="com_novo_3" type="number" step="0.1" min="0" value="${c.novo?.[2]?.pct??2}"></div></div><h4>Cliente da carteira</h4><div class="formgrid"><div><label>Até 3 categorias (%)</label><input id="com_cart_1" type="number" step="0.1" min="0" value="${c.carteira?.[0]?.pct??0}"></div><div><label>De 4 a 5 categorias (%)</label><input id="com_cart_2" type="number" step="0.1" min="0" value="${c.carteira?.[1]?.pct??1}"></div><div><label>6 ou mais categorias (%)</label><input id="com_cart_3" type="number" step="0.1" min="0" value="${c.carteira?.[2]?.pct??1.5}"></div><div><label>Bônus por caixa de fonte (R$)</label><input id="com_bonus" type="number" step="0.01" min="0" value="${c.bonusFonte??20}"></div></div><div class="actions"><button class="btn" onclick="salvarComissao()">Salvar comissão</button><button class="btn ghost" onclick="$('comissaoConfigOverlay').remove()">Cancelar</button></div></div></div>`);
+}
+
+async function salvarComissao(){
+  const valor=id=>Math.max(0,Number($(id)?.value||0));
+  state.comissao={novo:[{min:0,max:4,pct:valor('com_novo_1')},{min:5,max:6,pct:valor('com_novo_2')},{min:7,max:99,pct:valor('com_novo_3')}],carteira:[{min:0,max:3,pct:valor('com_cart_1')},{min:4,max:5,pct:valor('com_cart_2')},{min:6,max:99,pct:valor('com_cart_3')}],bonusFonte:valor('com_bonus')};
+  await cloudSave();$('comissaoConfigOverlay')?.remove();toast('✅ Comissão atualizada');faturamento();
+}
+function itemSelecionarClientePedido(c){ return `<button data-search="${esc(((c.loja||'')+' '+(c.nome||'')).toLowerCase())}" onclick="$('selecionarPedidoOverlay').remove();novoPedido('${c.id}')"><b>${esc(c.loja||c.nome)}</b><small>${esc(c.nome||'')} ${c.cidade?'• '+esc(c.cidade):''}</small></button>`; }
+function filtrarClientesPedido(q){ document.querySelectorAll('#listaClientesPedido>button').forEach(b=>b.style.display=b.dataset.search.includes(q.toLowerCase())?'':'none'); }
+
 let _compFormId=false;
 
 function concorrentes(){
