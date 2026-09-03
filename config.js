@@ -73,9 +73,25 @@ async function cloudLoad(){
   try {
     const tables = ['clientes','lembretes','scripts','interacoes','pedidos','rmas','concorrentes'];
     for(const t of tables){
+      const locais = Array.isArray(state[t]) ? [...state[t]] : [];
       const {data, error} = await sb.from(t).select('*').order('created_at',{ascending:false});
       if(error){ ok=false; console.warn('cloudLoad erro em '+t, error.message); continue; }
-      if(data) state[t] = data;
+      if(data && t==='pedidos'){
+        const remotosPorId=new Map(data.map(item=>[item.id,item]));
+        const recuperar=[];
+        locais.forEach(item=>{
+          if(!remotosPorId.has(item.id) || item.updated_at){
+            remotosPorId.set(item.id,item);
+            recuperar.push(item);
+          }
+        });
+        state[t]=[...remotosPorId.values()].sort((a,b)=>(b.created_at||b.data||'').localeCompare(a.created_at||a.data||''));
+        if(recuperar.length){
+          const {error:recError}=await sb.from('pedidos').upsert(recuperar.map(pedidoParaNuvem),{onConflict:'id'});
+          if(recError){ ok=false; console.warn('Falha ao recuperar pedidos locais:',recError.message); }
+          else toast(`✅ ${recuperar.length} pedido${recuperar.length!==1?'s':''} recuperado${recuperar.length!==1?'s':''} e salvo${recuperar.length!==1?'s':''} na nuvem`,6000);
+        }
+      }else if(data) state[t] = data;
     }
     const {data:cfg,error:cfgError} = await sb.from('config').select('*').eq('key','state').maybeSingle();
     if(cfgError) ok=false;
@@ -84,6 +100,7 @@ async function cloudLoad(){
       ['pipeline','metas','comissao','registros','tags','interesses'].forEach(k=>{ if(parsed[k]) state[k]=parsed[k]; });
     }
   } catch(e){ ok=false; console.warn('cloudLoad error',e); }
+  localSave();
   cloud=ok;
   return ok;
 }
@@ -102,10 +119,20 @@ async function upsertRow(table, row){
   localSave();
   if(!sb) return;
   try {
-    const {error} = await sb.from(table).upsert(row,{onConflict:'id'});
+    const payload=table==='pedidos'?pedidoParaNuvem(row):row;
+    const {error} = await sb.from(table).upsert(payload,{onConflict:'id'});
     if(error){ cloud=false; console.warn('upsertRow erro em '+table+':', error.message); toast('⚠️ Salvo neste aparelho, mas a nuvem falhou',5000); return false; }
     console.log('✅ Salvo em '+table+':', row.id); return true;
   } catch(e){ cloud=false; console.warn('upsertRow error',e); toast('⚠️ Salvo neste aparelho, mas a nuvem falhou',5000); return false; }
+}
+
+function pedidoParaNuvem(p){
+  return {
+    id:p.id,cliente_id:p.cliente_id,tipo_cliente:p.tipo_cliente,valor:p.valor,
+    caixas_fonte:p.caixas_fonte,categorias:p.categorias||[],obs:p.obs||'',
+    comissao:p.comissao,comissao_pct:p.comissao_pct,bonus_fonte:p.bonus_fonte,
+    data:p.data,created_at:p.created_at||new Date().toISOString()
+  };
 }
 
 async function deleteRow(table, id){
