@@ -37,7 +37,9 @@ const RMA_MOTIVOS = ['Defeito de fabricação','Produto errado','Avaria no trans
 const COMISSAO = {
   novo:     [{min:0, max:4, pct:1.0},{min:5, max:6, pct:1.5},{min:7, max:99, pct:2.0}],
   carteira: [{min:0, max:3, pct:0},{min:4, max:5, pct:1.0},{min:6, max:99, pct:1.5}],
-  bonusFonte: 20
+  bonusFonte: 20,
+  pctMeta: 5,
+  metaMeses: {}
 };
 
 let state = {
@@ -152,9 +154,12 @@ function calcComissao(pedido){
   const tabela = state.comissao || COMISSAO;
   const regras = tabela[tipo] || tabela.novo || COMISSAO.novo;
   const regra = regras.slice().reverse().find(r => cats >= r.min) || regras[0];
-  const pct = regra.pct / 100;
+  const mes = pedido.data?.slice(0,7);
+  const metaAtiva = !!(mes && tabela.metaMeses?.[mes]);
+  const percentual = metaAtiva ? Number(tabela.pctMeta ?? 5) : regra.pct;
+  const pct = percentual / 100;
   const bonusUnitario = Number(tabela.bonusFonte ?? COMISSAO.bonusFonte);
-  return { pct: regra.pct, comissaoBase: valor*pct, bonusFonte: fontes*bonusUnitario, total: valor*pct + fontes*bonusUnitario };
+  return { pct: percentual, metaAtiva, comissaoBase: valor*pct, bonusFonte: fontes*bonusUnitario, total: valor*pct + fontes*bonusUnitario };
 }
 
 async function buscarCNPJ(cnpj){
