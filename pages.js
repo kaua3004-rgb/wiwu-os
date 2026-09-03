@@ -671,6 +671,7 @@ function faturamento(){
         <button class="btn ghost" onclick="editarComissao()">💸 Editar comissão</button>
         <button class="btn ${metaComissaoAtiva?'green':'ghost'}" onclick="alternarMetaComissao('${mes}')">${metaComissaoAtiva?'✅ Meta global: +1%':'🏆 Aplicar +1% da meta global'}</button>
         <button class="btn ghost" onclick="limparPedidosOrfaos()">🧹 Corrigir</button>
+        ${mes==='2026-08'?'<button class="btn ghost danger" onclick="limparAgostoManterPdfs()">🗑️ Limpar antigos de agosto</button>':''}
       </div>
     </div>
     <div class="commission-card" style="margin-bottom:20px">
@@ -721,6 +722,19 @@ function faturamento(){
           </div>
         </div>`;}).join('')||'<div class="empty">Nenhum pedido neste mês.</div>'}
     </div>`;
+}
+
+async function limparAgostoManterPdfs(){
+  const agosto=state.pedidos.filter(p=>p.data?.slice(0,7)==='2026-08');
+  const importados=agosto.filter(p=>Array.isArray(detalhesPedido(p.id).itens)&&detalhesPedido(p.id).itens.length>0);
+  const antigos=agosto.filter(p=>!importados.includes(p));
+  const numeros=importados.map(p=>detalhesPedido(p.id).numero||p.obs||'sem número').join(', ')||'nenhum';
+  if(!confirm(`ATENÇÃO: apagar ${antigos.length} pedido(s) antigo(s) de agosto e manter ${importados.length} importado(s) por PDF (${numeros})?`)) return;
+  for(const p of antigos){ await deleteRow('pedidos',p.id); if(state.pedidoDetalhes) delete state.pedidoDetalhes[p.id]; }
+  state.pedidos=state.pedidos.filter(p=>!antigos.includes(p));
+  await cloudSave();
+  toast(`✅ ${antigos.length} pedido(s) antigo(s) removido(s). ${importados.length} PDF(s) mantido(s).`,7000);
+  faturamento();
 }
 
 function abrirPedidosMes(mes){
