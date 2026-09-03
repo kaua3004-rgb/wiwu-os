@@ -57,6 +57,7 @@ let state = {
   pipeline: [...PIPELINE_DEFAULT],
   interesses: ['iPhone','iPad','MacBook','Energia','Áudio','Pencil','Apple Watch','Cases','Películas'],
   metas: { contatosDia:15, ligacoesDia:10, contatosMes:40, faturamentoMes:50000 },
+  comissao: JSON.parse(JSON.stringify(COMISSAO)),
   registros: {},
   tags: ['VIP','Indicação','Pagamento difícil','Feira SP 2026','Potencial alto','Inativo'],
 };
@@ -66,26 +67,30 @@ let sb = null, cloud = false;
 
 async function cloudLoad(){
   if(!sb) return;
+  let ok = true;
   try {
     const tables = ['clientes','lembretes','scripts','interacoes','pedidos','rmas','concorrentes'];
     for(const t of tables){
       const {data, error} = await sb.from(t).select('*').order('created_at',{ascending:false});
-      if(error){ console.warn('cloudLoad erro em '+t, error.message); continue; }
-      if(data && data.length > 0) state[t] = data;
+      if(error){ ok=false; console.warn('cloudLoad erro em '+t, error.message); continue; }
+      if(data) state[t] = data;
     }
-    const {data:cfg} = await sb.from('config').select('*').eq('key','state').maybeSingle();
+    const {data:cfg,error:cfgError} = await sb.from('config').select('*').eq('key','state').maybeSingle();
+    if(cfgError) ok=false;
     if(cfg && cfg.value){
       const parsed = JSON.parse(cfg.value||'{}');
-      ['pipeline','metas','registros','tags','interesses'].forEach(k=>{ if(parsed[k]) state[k]=parsed[k]; });
+      ['pipeline','metas','comissao','registros','tags','interesses'].forEach(k=>{ if(parsed[k]) state[k]=parsed[k]; });
     }
-  } catch(e){ console.warn('cloudLoad error',e); }
+  } catch(e){ ok=false; console.warn('cloudLoad error',e); }
+  cloud=ok;
+  return ok;
 }
 
 async function cloudSave(){
   localSave();
   if(!sb) return;
   try {
-    const cfg = {pipeline:state.pipeline,metas:state.metas,registros:state.registros,tags:state.tags,interesses:state.interesses};
+    const cfg = {pipeline:state.pipeline,metas:state.metas,comissao:state.comissao,registros:state.registros,tags:state.tags,interesses:state.interesses};
     const {error} = await sb.from('config').upsert({key:'state',value:JSON.stringify(cfg)},{onConflict:'key'});
     if(error) console.warn('cloudSave erro config:', error.message);
   } catch(e){ console.warn('cloudSave error',e); }
@@ -96,9 +101,9 @@ async function upsertRow(table, row){
   if(!sb) return;
   try {
     const {error} = await sb.from(table).upsert(row,{onConflict:'id'});
-    if(error) console.warn('upsertRow erro em '+table+':', error.message);
-    else console.log('✅ Salvo em '+table+':', row.id);
-  } catch(e){ console.warn('upsertRow error',e); }
+    if(error){ cloud=false; console.warn('upsertRow erro em '+table+':', error.message); toast('⚠️ Salvo neste aparelho, mas a nuvem falhou',5000); return false; }
+    console.log('✅ Salvo em '+table+':', row.id); return true;
+  } catch(e){ cloud=false; console.warn('upsertRow error',e); toast('⚠️ Salvo neste aparelho, mas a nuvem falhou',5000); return false; }
 }
 
 async function deleteRow(table, id){
@@ -144,10 +149,12 @@ function calcComissao(pedido){
   const cats = (pedido.categorias||[]).length;
   const valor = parseFloat(pedido.valor||0);
   const fontes = parseInt(pedido.caixas_fonte||0);
-  const regras = COMISSAO[tipo] || COMISSAO.novo;
+  const tabela = state.comissao || COMISSAO;
+  const regras = tabela[tipo] || tabela.novo || COMISSAO.novo;
   const regra = regras.slice().reverse().find(r => cats >= r.min) || regras[0];
   const pct = regra.pct / 100;
-  return { pct: regra.pct, comissaoBase: valor*pct, bonusFonte: fontes*COMISSAO.bonusFonte, total: valor*pct + fontes*COMISSAO.bonusFonte };
+  const bonusUnitario = Number(tabela.bonusFonte ?? COMISSAO.bonusFonte);
+  return { pct: regra.pct, comissaoBase: valor*pct, bonusFonte: fontes*bonusUnitario, total: valor*pct + fontes*bonusUnitario };
 }
 
 async function buscarCNPJ(cnpj){
