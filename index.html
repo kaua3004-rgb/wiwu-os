@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="WIWU OS">
-<title>WIWU OS V5</title>
+<title>WIWU OS V5.2</title>
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.50.0/dist/umd/supabase.js"></script>
 </head>
@@ -17,7 +17,7 @@
   <aside class="sidebar">
     <div class="brand">
       <div class="logo">W</div>
-      <div><h1>WIWU OS</h1><p>CRM Comercial v5</p></div>
+      <div><h1>WIWU OS</h1><p>CRM Comercial v5.2</p></div>
     </div>
     <nav class="nav" id="nav"></nav>
   </aside>
@@ -26,11 +26,13 @@
   <main class="content">
     <div class="page active" id="dashboard"></div>
     <div class="page" id="clientes"></div>
+    <div class="page" id="prospeccao"></div>
     <div class="page" id="pipeline"></div>
     <div class="page" id="feira"></div>
     <div class="page" id="lembretes"></div>
     <div class="page" id="faturamento"></div>
     <div class="page" id="ranking"></div>
+    <div class="page" id="posvenda"></div>
     <div class="page" id="scripts"></div>
     <div class="page" id="concorrentes"></div>
   </main>
@@ -50,17 +52,20 @@
 <script src="clientes.js"></script>
 <script src="ficha.js"></script>
 <script src="pages.js"></script>
+<script src="prospeccao.js"></script>
 <script>
 
 // ── NAVEGAÇÃO ─────────────────────────────────────────────────────
 const PAGES = [
   ['dashboard',   '🏠', 'Home',        'principal'],
   ['clientes',    '👥', 'Clientes',    'principal'],
+  ['prospeccao',  '🎯', 'Prospecção',  'principal'],
   ['pipeline',    '📊', 'Pipeline',    'principal'],
   ['feira',       '🎪', 'Modo Feira',  'principal'],
   ['lembretes',   '⏰', 'Lembretes',   'principal'],
   ['faturamento', '💰', 'Faturamento', 'financeiro'],
   ['ranking',     '🏆', 'Ranking',     'financeiro'],
+  ['posvenda',    '❤️', 'Pós-venda',   'financeiro'],
   ['scripts',     '📝', 'Scripts',     'ferramentas'],
   ['concorrentes','⚔️', 'Concorrentes','ferramentas'],
 ];
@@ -92,7 +97,7 @@ function initNav(){
 function showPage(id){
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id===id));
   document.querySelectorAll('[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===id));
-  const renders={dashboard,clientes,pipeline,feira,lembretes,faturamento,ranking,scripts,concorrentes};
+  const renders={dashboard,clientes,prospeccao,pipeline,feira,lembretes,faturamento,ranking,posvenda,scripts,concorrentes};
   if(renders[id]) renders[id]();
 }
 
@@ -107,9 +112,11 @@ async function start(){
   try {
     sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
     cloud = true;
-    await cloudLoad();
+    const sincronizado = await cloudLoad();
     dashboard(); // Rerender com dados da nuvem
-    toast('☁️ Sincronizado com a nuvem');
+    if(sincronizado) toast('☁️ Sincronizado com a nuvem');
+    else toast('⚠️ Nuvem indisponível — usando dados deste aparelho',5000);
+    if(typeof notificarLembretes==='function') notificarLembretes();
   } catch(e){
     toast('📱 Modo offline — dados locais');
   }
