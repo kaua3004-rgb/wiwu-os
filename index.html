@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#ffffff">
     <meta name="apple-mobile-web-app-title" content="WIWU OS">
-    <title>WIWU OS V5.7.1</title>
+    <title>WIWU OS V5.7.2</title>
     <style>
 :root{
   /* Tema claro clean — roxo WIWU como único acento */
@@ -232,6 +232,9 @@ select option{background:#fff;color:var(--text)}
 </style>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.50.0/dist/umd/supabase.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style id="rvStyles">
+.rv-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:16px 0}.rv-stat{border:1px solid #ddd;border-radius:8px;padding:12px;background:#faf8ff}.rv-stat small{display:block;font-size:10px;color:#555;margin-bottom:5px}.rv-stat strong{display:block;font-size:20px;color:#432281}.rv-scroll{overflow:auto;max-height:50vh}.rv-table{width:100%;border-collapse:collapse;font-size:12px}.rv-table th,.rv-table td{padding:9px 7px;text-align:left;border-bottom:1px solid #ddd;vertical-align:top}.rv-table th{background:#f4f0fc}.rv-table .rv-number{white-space:nowrap;text-align:right}.rv-table tfoot{font-weight:bold;background:#eee8fc}.rv-note{font-size:11px;color:#555;line-height:1.5}.rv-categories{max-width:600px}
+</style>
 </head>
 <body>
 <div class="app">
@@ -3849,25 +3852,40 @@ function dadosRelatorioVendas(){
  return pedidosValidos().filter(p=>p.data&&p.data.slice(0,10)>=inicio&&p.data.slice(0,10)<=fim&&(!cliente||p.cliente_id===cliente)).sort((a,b)=>a.data.localeCompare(b.data)).map(p=>{
  const c=state.clientes.find(c=>c.id===p.cliente_id),d=detalhesPedido(p.id)||{};
  const produtos=Number(p.valor)||0,frete=Number(fretePedido(p))||0;
- return [fmt(p.data),d.numero||'',c?.loja||c?.nome||'Cliente',p.tipo_cliente==='novo'?'Novo':'Carteira',produtos,frete,produtos+frete];
+ const cats=normalizarCategorias(p.categorias||[]);
+ const row=[fmt(p.data),d.numero||'',c?.loja||c?.nome||'Cliente',p.tipo_cliente==='novo'?'Novo':'Carteira',produtos,frete,produtos+frete,Math.max(0,parseInt(p.caixas_fonte,10)||0),cats.length,cats.map(id=>CATEGORIAS.find(c=>c.id===id)?.label||id).join(', ')];
+ row.categorias=cats;row.clienteId=p.cliente_id;return row;
  });
 }
+function resumoRelatorioVendas(rows){
+ const soma=i=>rows.reduce((s,r)=>s+r[i],0);
+ const cats=new Set(rows.flatMap(r=>r.categorias));
+ return {produtos:soma(4),frete:soma(5),total:soma(6),caixas:soma(7),ocorrencias:soma(8),categorias:cats.size,clientes:new Set(rows.map(r=>r.clienteId)).size};
+}
+function totaisRelatorioVendas(rows){const t=resumoRelatorioVendas(rows);return ['TOTAL',rows.length+' pedidos',t.clientes+' clientes','',t.produtos,t.frete,t.total,t.caixas,t.ocorrencias,t.categorias+' categorias diferentes'];}
+function cabecalhosRelatorioVendas(){return ['Data','Pedido','Cliente','Tipo','Produtos (R$)','Frete (R$)','Total (R$)','Caixas fechadas de fonte','Qtd. categorias qualificadas','Categorias qualificadas'];}
 function htmlRelatorioVendas(rows){
- const produtos=rows.reduce((s,r)=>s+r[4],0),frete=rows.reduce((s,r)=>s+r[5],0);
- return `<p><b>${rows.length} pedidos</b> · Produtos: <b>${fmtMoney(produtos)}</b> · Frete: ${fmtMoney(frete)} · Total: <b>${fmtMoney(produtos+frete)}</b></p><div style="overflow:auto;max-height:50vh"><table style="width:100%;border-collapse:collapse"><thead><tr>${['Data','Pedido','Cliente','Tipo','Produtos','Frete','Total'].map(h=>`<th style="padding:9px;text-align:left;border-bottom:1px solid #ddd">${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map((v,i)=>`<td style="padding:9px;border-bottom:1px solid #eee">${i>=4?fmtMoney(v):esc(String(v))}</td>`).join('')}</tr>`).join('')||'<tr><td colspan="7">Nenhuma venda encontrada neste período.</td></tr>'}</tbody></table></div>`;
+ const t=resumoRelatorioVendas(rows);
+ const cell=(v,i)=>i>=4&&i<=6?fmtMoney(v):esc(String(v));
+ const resumo=[['TOTAL GERAL (COM FRETE)',fmtMoney(t.total)],['Produtos (sem frete)',fmtMoney(t.produtos)],['Frete',fmtMoney(t.frete)],['Pedidos / clientes',rows.length+' / '+t.clientes],['Caixas fechadas de fonte',t.caixas],['Categorias diferentes',t.categorias]];
+ const categorias=CATEGORIAS.map(c=>({label:c.label,pedidos:rows.filter(r=>r.categorias.includes(c.id)).length})).filter(c=>c.pedidos);
+ return `<div class="rv-summary">${resumo.map(([label,value])=>`<div class="rv-stat"><small>${label}</small><strong>${value}</strong></div>`).join('')}</div><div class="rv-scroll"><table class="rv-table"><thead><tr>${cabecalhosRelatorioVendas().map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map((v,i)=>`<td class="${i>=4&&i<=8?'rv-number':''}">${cell(v,i)}</td>`).join('')}</tr>`).join('')||'<tr><td colspan="10">Nenhuma venda encontrada neste período.</td></tr>'}</tbody>${rows.length?`<tfoot><tr>${totaisRelatorioVendas(rows).map((v,i)=>`<td>${cell(v,i)}</td>`).join('')}</tr></tfoot>`:''}</table></div><p class="rv-note">Categorias qualificadas conforme o cadastro do pedido. Soma das quantidades por pedido: <b>${t.ocorrencias}</b>. Categorias diferentes no período: <b>${t.categorias}</b>. Caixas fechadas de fonte conforme quantidade registrada em cada pedido.</p>${categorias.length?`<h3>Resumo por categoria</h3><table class="rv-table rv-categories"><thead><tr><th>Categoria qualificada</th><th>Pedidos com a categoria</th></tr></thead><tbody>${categorias.map(c=>`<tr><td>${esc(c.label)}</td><td>${c.pedidos}</td></tr>`).join('')}</tbody></table>`:''}`;
 }
 function atualizarRelatorioVendas(){try{$('rvConteudo').innerHTML=htmlRelatorioVendas(dadosRelatorioVendas())}catch(e){$('rvConteudo').textContent=e.message}}
+function csvRelatorioVendas(rows){
+ const safe=v=>'"'+String(v).replace(/^[=+@\-\t\r]/,"'$&").replace(/"/g,'""')+'"';
+ const t=resumoRelatorioVendas(rows);
+ return '\uFEFF'+[cabecalhosRelatorioVendas(),...rows,totaisRelatorioVendas(rows),[],['Categorias diferentes no período',t.categorias],['Soma das categorias qualificadas por pedido',t.ocorrencias],[],['Categoria qualificada','Pedidos com a categoria'],...CATEGORIAS.map(c=>[c.label,rows.filter(r=>r.categorias.includes(c.id)).length]).filter(r=>r[1])].map(r=>r.map((v,i)=>safe(i>=4&&i<=6&&typeof v==='number'?v.toFixed(2).replace('.',','):v)).join(';')).join('\r\n');
+}
 function baixarRelatorioVendas(){
  try{const rows=dadosRelatorioVendas();if(!rows.length){toast('Nenhuma venda para exportar.');return}
- const safe=v=>'"'+String(v).replace(/^[=+@\-\t\r]/,"'$&").replace(/"/g,'""')+'"';
- const totals=[ 'TOTAL','','','',... [4,5,6].map(i=>rows.reduce((s,r)=>s+r[i],0))];
- const csv=[['Data','Pedido','Cliente','Tipo','Produtos (R$)','Frete (R$)','Total (R$)'],...rows,totals].map(r=>r.map((v,i)=>safe(i>=4&&typeof v==='number'?v.toFixed(2).replace('.',','):v)).join(';')).join('\r\n');
- const url=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'}));const a=document.createElement('a');a.href=url;a.download=`WIWU_Vendas_${$('rvInicio').value}_${$('rvFim').value}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+ const url=URL.createObjectURL(new Blob([csvRelatorioVendas(rows)],{type:'text/csv;charset=utf-8;'}));const a=document.createElement('a');a.href=url;a.download=`WIWU_Vendas_${$('rvInicio').value}_${$('rvFim').value}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
  }catch(e){toast(e.message)}
 }
 function imprimirRelatorioVendas(){
  try{const rows=dadosRelatorioVendas();if(!rows.length){toast('Nenhuma venda para imprimir.');return}const w=window.open('','_blank');if(!w){toast('Permita abrir a janela do relatório para salvar em PDF.');return}
- w.document.write('<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>WIWU — Relatório de vendas</title><style>body{font:12px Arial;color:#222;margin:28px}table{font-size:11px}thead{display:table-header-group}tr{break-inside:avoid}@media print{div{max-height:none!important;overflow:visible!important}}</style><h1>WIWU — Relatório de vendas</h1><p>Período: '+esc(fmt($('rvInicio').value))+' a '+esc(fmt($('rvFim').value))+'</p>'+htmlRelatorioVendas(rows)+'</html>');w.document.close();w.focus();w.print();
+ const cliente=state.clientes.find(c=>c.id===$('rvCliente').value);
+ w.document.write('<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>WIWU - Relatório de vendas</title><style>'+document.getElementById('rvStyles').textContent+'@page{size:A4 landscape;margin:12mm}body{font:11px Arial;color:#222;margin:0}.rv-table{font-size:9px}.rv-scroll{overflow:visible!important;max-height:none!important}.rv-table th,.rv-table td{padding:6px 4px}.rv-summary{grid-template-columns:repeat(3,1fr)}thead{display:table-header-group}tfoot{display:table-row-group}tr{break-inside:avoid}.rv-stat{break-inside:avoid}.rv-stat strong{font-size:17px}</style></head><body><h1>WIWU - Relatório de vendas</h1><p>Período: '+esc(fmt($('rvInicio').value))+' a '+esc(fmt($('rvFim').value))+' | Cliente: '+esc(cliente?.loja||cliente?.nome||'Todos os clientes')+'</p>'+htmlRelatorioVendas(rows)+'</body></html>');w.document.close();w.focus();w.print();
  }catch(e){toast(e.message)}
 }
 </script>
